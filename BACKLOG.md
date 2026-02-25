@@ -63,21 +63,66 @@ Progress tracker for all phases and milestones. Updated at the end of each devel
 
 ---
 
-## Phase 2 — Strategy Wizard (LLM + React) ⬜ TODO
+## Phase 2 — Strategy Wizard (LLM + React) ✅ DONE
 
 > User describes a trading idea in natural language → receives a validated `StrategyDefinition` JSON.
+> Stack: Node.js/Express API + Claude `tool_use` + React/Vite UI. pnpm monorepo.
 
-### Open questions (must resolve before starting)
-- [ ] LLM provider: Claude API or OpenAI? (cost, latency, tool-use capabilities)
-- [ ] Auth strategy for the API: API key or none (local-only)?
+### M1 — Node.js API scaffold ✅
+- [x] `api/package.json` + `tsconfig.json` (ESNext + bundler moduleResolution)
+- [x] `api/src/server.ts` — Express app + CORS + JSON middleware
+- [x] `api/src/db/client.ts` — better-sqlite3 connection + WAL mode + `init_db()`
+- [x] `api/src/db/schema.sql` — DDL: `strategies`, `error_log` tables
+- [x] `GET /health` → `{"status":"ok"}`
+- [x] `pnpm-workspace.yaml` + root `package.json` for monorepo
+- [x] `pnpm.onlyBuiltDependencies` for native binaries (better-sqlite3, esbuild)
 
-### Planned milestones
-- [ ] M1 — Zod schema generated from `StrategyDefinition` v1 JSON Schema
-- [ ] M2 — Node.js Wizard Service: LLM prompt + output validation
-- [ ] M3 — React Wizard UI: chat interface, Basic/Advanced toggle, JSON preview
-- [ ] M4 — Strategy persisted to SQLite `strategies` table
-- [ ] M5 — Error handling: invalid LLM output → user-facing message
-- [ ] M6 — E2E test (Playwright): describe idea → submit → confirm in vault
+### M2 — Shared Zod schema + Strategy CRUD ✅
+- [x] `shared/src/strategy.ts` — Zod schema mirroring Phase 1 Pydantic models exactly
+- [x] `@algo-farm/shared` workspace package with exports
+- [x] `api/src/db/repositories/strategy.repo.ts` — `StrategyRepository` CRUD (create/list/get/update/delete)
+- [x] `api/src/middleware/validate.ts` — `validateBody()` Zod middleware factory
+- [x] `api/src/routes/strategies.ts` — POST/GET/GET:id/PUT/DELETE routes
+- [x] `api/vitest.config.ts` — alias for `@algo-farm/shared`
+- [x] `api/tests/unit/strategy.repo.test.ts` — 9 tests on in-memory SQLite
+- [x] `api/tests/integration/strategies.routes.test.ts` — 9 integration tests (supertest)
+
+### M3 — Claude Wizard Service ✅
+- [x] `api/src/services/wizard.service.ts` — `WizardService.chat()` with `tool_use` forcing structured output
+- [x] Retry once on Zod validation failure with error feedback to Claude
+- [x] `api/src/routes/wizard.ts` — `POST /wizard/chat`
+- [x] `api/.env.example` — `ANTHROPIC_API_KEY`, `PORT`, `DB_PATH`
+- [x] `api/tests/unit/wizard.service.test.ts` — 3 tests (success, retry, no-tool-use error)
+- [x] **21/21 tests passing**
+
+### M3b — Multi-provider LLM support ✅
+- [x] Provider abstraction: `api/src/services/providers/base.ts` — `LLMProvider` interface, `SYSTEM_PROMPT`, `STRATEGY_TOOL_SCHEMA`, `validateWithRetry()`
+- [x] `api/src/services/providers/claude.provider.ts` — extracted from wizard.service, zero logic changes
+- [x] `api/src/services/providers/gemini.provider.ts` — `@google/generative-ai`, `FunctionCallingMode.ANY`; schema sanitized for Gemini (`$ref` inline, `additionalProperties`/array types stripped); model configurable via `GEMINI_MODEL` (default: `gemini-2.0-flash-lite`)
+- [x] `api/src/services/providers/openrouter.provider.ts` — `openai` SDK + baseURL override; model configurable via `OPENROUTER_MODEL` (default: `upstage/solar-pro-3:free`, verified tool-calling support)
+- [x] `wizard.service.ts` rewritten as factory delegating to provider by ID
+- [x] `POST /wizard/chat` accepts `provider: "claude"|"gemini"|"openrouter"` (default: `"gemini"`)
+- [x] `api/.env.example` — added `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`
+- [x] `api/package.json` — added `@google/generative-ai`, `openai`
+- [x] `ui/src/store/wizard.ts` — `provider` state + `setProvider()`
+- [x] `ui/src/api/client.ts` — `wizardChat(message, provider)` passes provider in body
+- [x] `ui/src/components/Wizard/WizardPage.tsx` — dropdown "Provider: Gemini | Claude | Qwen/OpenRouter"
+- [x] **24/24 tests passing**, zero TypeScript errors (API + UI)
+
+### M4 — React UI (Wizard + Strategy List) ✅
+- [x] `ui/` scaffold: `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html`
+- [x] `ui/src/main.tsx` + `App.tsx` — React Router: `/wizard` | `/strategies`
+- [x] `ui/src/api/client.ts` — typed fetch wrapper (proxied via `/api`)
+- [x] `ui/src/store/wizard.ts` — Zustand store: messages, currentStrategy, isLoading
+- [x] `ui/src/components/Wizard/WizardPage.tsx` — chat UI + loading state + save button
+- [x] `ui/src/components/Wizard/StrategyPreview.tsx` — field summary + JSON preview
+- [x] `ui/src/components/Strategies/StrategiesPage.tsx` — table with inline JSON expand
+- [x] Vite dev proxy: `/api` → `http://localhost:3001`
+
+### M5 — Docs ✅
+- [x] `api/README.md` — setup, env vars, endpoints reference
+- [x] `ui/README.md` — setup, proxy note, pages reference
+- [x] `BACKLOG.md` updated
 
 ---
 

@@ -1,0 +1,17 @@
+{
+  "name": "algo-farm",
+  "private": true,
+  "scripts": {
+    "dev:api": "pnpm --filter api dev",
+    "dev:ui": "pnpm --filter ui dev",
+    "test:api": "pnpm --filter api test",
+    "test": "pnpm --filter api test"
+  },
+  "engines": {
+    "pnpm": ">=9",
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+  }
+}

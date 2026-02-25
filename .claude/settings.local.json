@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/pytest:*)",
+      "Bash(npx node-gyp:*)",
+      "Bash(curl:*)"
+    ]
+  }
+}
