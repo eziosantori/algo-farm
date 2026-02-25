@@ -26,7 +26,144 @@ This document defines all data contracts and persistence schemas for the Algo Tr
 
 ---
 
-## 1. StrategyDefinition v1 — Core Strategy Contract
+## 1. Phase 1 CLI Schemas
+
+These schemas define the input/output contract of the standalone Python engine CLI. They require no Node.js, Redis, or UI to be useful — a developer or AI agent can use them directly on the local machine.
+
+### 1.1 `param_grid.json` — Optimization Parameter Grid
+
+Passed to `--param-grid` on the CLI. Each key is a strategy parameter name; the value is either an array of discrete values to sweep, or a fixed scalar (not optimized).
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ParameterGrid",
+  "type": "object",
+  "description": "Keys are parameter names. Arrays are swept; scalars are fixed.",
+  "additionalProperties": {
+    "oneOf": [
+      {
+        "type": "array",
+        "minItems": 1,
+        "items": { "type": "number" },
+        "description": "Discrete values to sweep for this parameter"
+      },
+      {
+        "type": "number",
+        "description": "Fixed value — not optimized"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "sma_period": [20, 50, 100],
+      "breakout_threshold": [1.0, 1.5, 2.0],
+      "slippage_pips": 2
+    }
+  ]
+}
+```
+
+### 1.2 stdout JSONL Protocol — Progress & Results
+
+The engine writes **newline-delimited JSON** to stdout. Each line is one of three message types. Errors go to stderr (plain text) so they never break a parser reading stdout.
+
+#### `progress` message (emitted after each completed run)
+
+```json
+{
+  "type": "progress",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "pct": 45,
+  "current": {
+    "instrument": "EURUSD",
+    "timeframe": "H1",
+    "iteration": 5,
+    "total": 12,
+    "phase": "grid_search"
+  },
+  "elapsed_seconds": 120,
+  "estimated_remaining_seconds": 150
+}
+```
+
+#### `result` message (emitted after each completed run, alongside `progress`)
+
+```json
+{
+  "type": "result",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "instrument": "EURUSD",
+  "timeframe": "H1",
+  "params": {
+    "sma_period": 20,
+    "breakout_threshold": 1.5
+  },
+  "metrics": {
+    "net_pnl": 1250.50,
+    "cagr": 0.18,
+    "max_drawdown": -0.12,
+    "calmar_ratio": 1.50,
+    "sharpe_ratio": 1.42,
+    "sortino_ratio": 1.85,
+    "profit_factor": 1.65,
+    "win_rate": 0.58,
+    "num_trades": 87,
+    "avg_trade_duration_bars": 6,
+    "expectancy": 14.37
+  },
+  "run_id": "run-uuid"
+}
+```
+
+#### `completed` message (emitted once, last line of stdout)
+
+```json
+{
+  "type": "completed",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "total_runs": 12,
+  "optimization_method": "grid",
+  "best_params": {
+    "sma_period": 50,
+    "breakout_threshold": 1.5
+  },
+  "best_metrics": {
+    "sharpe_ratio": 1.85,
+    "max_drawdown": -0.14,
+    "win_rate": 0.62
+  },
+  "db_path": "./algo_farm.db",
+  "completed_at": "2026-02-24T10:00:00Z"
+}
+```
+
+#### `error` message (emitted to stderr, but also written to SQLite `error_log`)
+
+```
+ERROR [job=550e8400] DataMissingError: Parquet file not found for EURUSD/H1: /data/cache/EURUSD/H1.parquet
+```
+
+### 1.3 CLI flags reference
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--strategy` | Yes | Path to `strategy.json` (StrategyDefinition v1) |
+| `--instruments` | Yes | Comma-separated instrument list: `EURUSD,GBPUSD` |
+| `--timeframes` | Yes | Comma-separated timeframe list: `H1,D1` |
+| `--param-grid` | No | Path to `param_grid.json`; omit for single-run (no optimization) |
+| `--optimize` | No | `grid` (default) or `bayesian` (Phase 3+) |
+| `--metric` | No | Metric to optimize: `sharpe_ratio` (default), `calmar_ratio`, `profit_factor` |
+| `--data-start` | No | `YYYY-MM-DD` — filter OHLCV data start (default: all available) |
+| `--data-end` | No | `YYYY-MM-DD` — filter OHLCV data end (default: all available) |
+| `--db` | No | Path to SQLite DB (default: `./algo_farm.db`) |
+| `--data-dir` | No | Path to OHLCV Parquet cache (default: `./data/cache`) |
+| `--resume-job` | No | Resume an interrupted job by `job_id` |
+| `--log-level` | No | `DEBUG`, `INFO` (default), `WARNING` |
+
+---
+
+## 2. StrategyDefinition v1 — Core Strategy Contract
 
 ### Overview
 
@@ -445,7 +582,9 @@ class StrategyDefinition(BaseModel):
         }
 ```
 
-### Zod Schema (TypeScript)
+### Zod Schema (TypeScript) — Phase 2+
+
+> Not needed in Phase 1. Introduced in Phase 2 when the Node.js API and React UI consume the schema.
 
 ```typescript
 // shared/zod-schemas/strategy-definition.ts
@@ -549,7 +688,7 @@ export type StrategyDefinition = z.infer<typeof StrategyDefinitionSchema>;
 
 ---
 
-## 2. SQLite Schema
+## 3. SQLite Schema
 
 ### Entity Relationship Diagram
 
@@ -795,9 +934,11 @@ CREATE INDEX idx_error_log_error_type ON error_log(error_type);
 
 ---
 
-## 3. Job Payload Schema
+## 4. BullMQ Job Payload Schema — Phase 3+
 
-### Backtest Job Submission
+> This schema is used when the Node.js API submits jobs to the Python engine via Redis/BullMQ. Not needed in Phase 1 — in Phase 1, the engine is invoked directly via CLI and the stdout JSONL protocol (§1.2) serves the same purpose.
+
+### BullMQ Job Submission (Node.js → Redis)
 
 ```json
 {
@@ -879,7 +1020,7 @@ CREATE INDEX idx_error_log_error_type ON error_log(error_type);
 
 ---
 
-## 4. Versioning Policy
+## 5. Versioning Policy
 
 ### Schema Evolution Rules
 
@@ -943,7 +1084,7 @@ def load_strategy(strategy_json: str) -> StrategyDefinition:
 
 ---
 
-## 5. Key Constraints & Validation
+## 6. Key Constraints & Validation
 
 ### StrategyDefinition Validation
 

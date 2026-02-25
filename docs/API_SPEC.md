@@ -2,19 +2,73 @@
 
 ## Executive Summary
 
-This document specifies the REST API contract for the Node.js Express server. The API orchestrates all platform operations: strategy wizard chat, job submission, result retrieval, strategy vault CRUD, and export pipeline.
+This document specifies **two distinct API surfaces** for the platform:
 
-**Status:** Draft (Phase 1–2 endpoints marked `[stable]`, Phase 3+ marked `[draft]`)
+1. **Phase 1 — Python CLI contract** (no HTTP, no infra): The standalone engine is invoked as a subprocess. Input is CLI flags + JSON files. Output is newline-delimited JSON on stdout. Full schema in `SCHEMA.md §1`.
+2. **Phase 2+ — Node.js REST API**: Express server that wraps the Python CLI, adds job orchestration, strategy vault CRUD, and export pipeline. Documented as an OpenAPI 3.1 spec below.
+
+**REST API phase map:**
+
+| Tag | Introduced |
+|-----|-----------|
+| Wizard | Phase 2 |
+| Strategy CRUD | Phase 2 |
+| Jobs, Results | Phase 3 |
+| Robustness | Phase 4 |
+| Vault (journal, param sets) | Phase 5 |
+| Export | Phase 6 |
+
+**Status markers:** `[stable]` = contract finalized for its phase. `[draft]` = subject to change.
 
 ---
 
-## OpenAPI 3.1 Specification
+## Phase 1 CLI Contract (quick reference)
+
+> Full schema in `SCHEMA.md §1`. This section is a quick reference for the engine's command-line interface.
+
+```bash
+# Single backtest run (no optimization)
+python engine/run.py \
+  --strategy strategy.json \
+  --instruments EURUSD,GBPUSD \
+  --timeframes H1,D1 \
+  --db ./algo_farm.db
+
+# Grid search optimization
+python engine/run.py \
+  --strategy strategy.json \
+  --instruments EURUSD \
+  --timeframes H1 \
+  --param-grid param_grid.json \
+  --optimize grid \
+  --metric sharpe_ratio \
+  --db ./algo_farm.db
+
+# Resume interrupted job
+python engine/run.py --resume-job <job_id> --db ./algo_farm.db
+```
+
+**Output:** newline-delimited JSON on stdout (`progress`, `result`, `completed` messages — see `SCHEMA.md §1.2`). Errors on stderr.
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | Completed successfully |
+| `1` | Unrecoverable error (missing data file, invalid strategy JSON, etc.) |
+| `2` | Interrupted (SIGINT/SIGTERM); job state saved, resumable with `--resume-job` |
+
+---
+
+## Phase 2+ — OpenAPI 3.1 Specification
 
 ```yaml
 openapi: 3.1.0
 info:
   title: Algo Farm API
-  description: Trading strategy development platform API
+  description: |
+    REST API for the Algo Trading Strategy Development Platform.
+    Introduced in Phase 2. Phase 1 uses the Python CLI directly (see CLI contract above).
   version: 1.0.0
   contact:
     name: Algo Farm Team
@@ -374,7 +428,7 @@ paths:
                   uptime_seconds:
                     type: integer
 
-  # Phase 1: Strategy Wizard
+  # Phase 2: Strategy Wizard
   /wizard/chat:
     post:
       tags: [Wizard]
@@ -475,6 +529,7 @@ paths:
                     type: array
 
   # Phase 2: Strategy CRUD
+  # (Node.js persists the StrategyDefinition produced by the Wizard or submitted directly)
   /strategies:
     post:
       tags: [Strategy]
@@ -642,7 +697,8 @@ paths:
           description: Invalid status transition
           $ref: '#/components/responses/Conflict'
 
-  # Phase 2: Jobs (Backtest)
+  # Phase 3: Jobs (Backtest)
+  # Node.js wraps the Phase 1 Python CLI via BullMQ child process
   /jobs:
     post:
       tags: [Jobs]
@@ -741,7 +797,7 @@ paths:
           description: Cannot cancel job (already completed)
           $ref: '#/components/responses/Conflict'
 
-  # Phase 2: Results
+  # Phase 3: Results
   /results/{job_id}:
     get:
       tags: [Results]
@@ -830,7 +886,7 @@ paths:
                   max:
                     type: number
 
-  # Phase 5: Export
+  # Phase 6: Export
   /export/{strategy_id}/{format}:
     post:
       tags: [Export]
@@ -983,7 +1039,7 @@ paths:
 
 ---
 
-## Rate Limiting (Phase 3+)
+## Rate Limiting (Phase 4+)
 
 ```
 X-RateLimit-Limit: 100

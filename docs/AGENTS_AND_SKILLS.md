@@ -2,16 +2,88 @@
 
 ## Executive Summary
 
-This document defines autonomous agent roles and their capabilities in the Algo Trading Platform. Agents handle long-running or complex tasks without user interaction, reporting results asynchronously.
+This document defines autonomous agent roles and their capabilities in the Algo Trading Platform.
 
-**Three core agents:**
+**From Phase 1**, the platform is designed to be used headlessly by an AI agent running on the same machine — no UI, no infrastructure required. The Python CLI is the first-class agent interface.
+
+**From Phase 2+**, three additional in-platform agents handle long-running or complex tasks without user interaction, reporting results asynchronously:
 1. **Code Generator Agent** — scaffold new indicators, tests, export adapters
 2. **Validator Agent** — check strategy viability, test correctness, data consistency
 3. **Data Analysis Agent** — analyze backtest results, detect regime patterns, suggest parameters
 
 ---
 
-## 1. Agent Roles & Responsibilities
+## 0. Phase 1: CLI Agent Interface (Headless Loop)
+
+An external AI agent (e.g. Claude, GPT-4o, or any LLM-based orchestrator) running on the same machine can drive the full experiment loop in Phase 1 **without any running service** — just Python, SQLite, and the Parquet data cache.
+
+### What the agent can do in Phase 1
+
+| Action | How |
+|--------|-----|
+| Define a strategy | Write `strategy.json` (StrategyDefinition v1) |
+| Run a backtest / grid optimization | `python engine/run.py --strategy ... --param-grid ...` |
+| Read live progress | Parse stdout JSONL stream line by line |
+| Read results | Parse `completed` message from stdout, or query SQLite directly |
+| Iterate (feedback loop) | Modify `strategy.json` based on results and re-run |
+| Resume interrupted run | `python engine/run.py --resume-job <job_id>` |
+
+### Reference agent loop (pseudocode)
+
+```python
+import subprocess, json, sqlite3
+
+def run_experiment(strategy: dict, param_grid: dict, db_path: str) -> dict:
+    write_json("strategy.json", strategy)
+    write_json("param_grid.json", param_grid)
+
+    proc = subprocess.Popen(
+        ["python", "engine/run.py",
+         "--strategy", "strategy.json",
+         "--param-grid", "param_grid.json",
+         "--instruments", "EURUSD,GBPUSD",
+         "--timeframes", "H1,D1",
+         "--db", db_path,
+         "--data-dir", "./data/cache"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+
+    result = None
+    for line in proc.stdout:
+        msg = json.loads(line)
+        if msg["type"] == "progress":
+            print(f"  {msg['pct']}% — {msg['current']['instrument']} {msg['current']['timeframe']}")
+        elif msg["type"] == "completed":
+            result = msg
+
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.read())
+
+    return result  # contains best_params, best_metrics, db_path
+
+# Agent feedback loop
+strategy = load_base_strategy()
+for iteration in range(10):
+    param_grid = agent_propose_grid(strategy, iteration)
+    result = run_experiment(strategy, param_grid, db_path="./algo_farm.db")
+
+    if result["best_metrics"]["sharpe_ratio"] > 2.0:
+        break  # agent satisfied
+
+    strategy = agent_refine_strategy(strategy, result)
+```
+
+### Constraints for Phase 1 agent use
+
+- The agent must **not** modify `algo_farm.db` directly — only the engine writes to it
+- The agent reads results either from the `completed` stdout message or by querying SQLite (`SELECT * FROM runs WHERE job_id = ?`)
+- No authentication, no network — everything is local file I/O and subprocess calls
+- The data cache (`/data/cache`) must be populated beforehand by the Node.js data fetcher (or a standalone script)
+
+---
+
+## 1. Agent Roles & Responsibilities — Phase 2+
 
 ### Code Generator Agent
 
@@ -423,8 +495,9 @@ React Dashboard renders heatmap + interpretation
 | **L3 (Action-then-report)** | Execute, report after | Review outcome | Code Generator: create files, notify developer |
 | **L4 (Autonomous)** | Execute, alert only if issues | Exception-based feedback | Auto-analyze on every backtest (report visible in dashboard) |
 
-**Current State (MVP):** L1–L3
-**Future (Phase 4+):** L3–L4
+**Phase 1 (CLI agent loop):** L4 — the external AI agent is fully autonomous, no human in the loop
+**Phase 2–3 (in-platform agents):** L1–L3
+**Phase 5+ (advanced agents):** L3–L4
 
 ---
 
@@ -481,7 +554,7 @@ Data Analyst:
 
 ## 8. Future Roadmap
 
-### Phase 4: Advanced Agents
+### Phase 5: Advanced In-Platform Agents
 
 **Regime Detection Agent**
 - Detect market regimes (bull, bear, sideways) from raw price data
@@ -493,7 +566,7 @@ Data Analyst:
 - Trigger: User clicks "Why did this lose money?"
 - Output: Heatmap of drawdown periods, suggested filter improvements
 
-### Phase 5: Optimization Agents
+### Phase 6: Optimization Agents
 
 **Parameter Optimizer Agent** (autonomous)
 - Run Bayesian optimization end-to-end

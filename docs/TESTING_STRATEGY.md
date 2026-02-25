@@ -5,10 +5,13 @@
 This document outlines the testing philosophy and architecture for the Algo Trading Platform. Testing is layered:
 - **Unit tests** verify individual components in isolation
 - **Integration tests** verify interactions between layers
+- **CLI contract tests** verify the Phase 1 standalone engine's input/output protocol
 - **E2E tests** verify complete user journeys
 - **CI/CD pipeline** ensures quality on every commit
 
 **Philosophy:** Test the behavior that matters. Don't test implementation details. Focus P0 efforts on compute correctness (backtest metrics, optimization logic).
+
+**Phase 1 is the testing foundation.** All Python engine unit and integration tests must pass with zero Node.js, Redis, or UI dependency. The CI job for Phase 1 is intentionally lightweight — no services, no Docker, just Python.
 
 ---
 
@@ -16,13 +19,14 @@ This document outlines the testing philosophy and architecture for the Algo Trad
 
 ### What to Test
 
-| Layer | What | Why | Priority |
-|-------|------|-----|----------|
-| **Python (Engine)** | Indicators (correct calculation), Metrics (known input → known output), Backtests (strategy logic), Optimization (param search) | Computational correctness is irreversible; garbage in = garbage out | P0 |
-| **Node.js (API)** | Job orchestration (state machine), Repository CRUD (DB correctness), LLM validation (schema parsing), Error propagation | Data consistency & job reliability | P0 |
-| **React (UI)** | Component rendering (Wizard, Dashboard), User interactions (form submission, filter apply), State management (Zustand stores) | UX correctness & user satisfaction | P1 |
-| **Integration** | Wizard → Job submission → Results display, Export pipeline end-to-end | Full feature validation | P0 |
-| **E2E (Playwright)** | User journey: describe strategy → backtest → validate → export | Real-world usage | P1 |
+| Layer | Phase | What | Why | Priority |
+|-------|-------|------|-----|----------|
+| **Python CLI contract** | 1 | stdout JSONL protocol, exit codes, CLI flags, resume behavior | First interface used by agents and developers; must be rock-solid before wrapping | P0 |
+| **Python (Engine)** | 1 | Indicators (correct calculation), Metrics (known input → known output), Backtests (strategy logic), Optimization (param search) | Computational correctness is irreversible; garbage in = garbage out | P0 |
+| **Node.js (API)** | 3 | Job orchestration (state machine), Repository CRUD (DB correctness), LLM validation (schema parsing), Error propagation | Data consistency & job reliability | P0 |
+| **React (UI)** | 3 | Component rendering (Wizard, Dashboard), User interactions (form submission, filter apply), State management (Zustand stores) | UX correctness & user satisfaction | P1 |
+| **Integration** | 3 | Wizard → Job submission → Results display, Export pipeline end-to-end | Full feature validation | P0 |
+| **E2E (Playwright)** | 3 | User journey: describe strategy → backtest → validate → export | Real-world usage | P1 |
 
 ### What NOT to Test
 
@@ -44,7 +48,240 @@ test_wizard__invalid_definition__renders_error_message
 
 ---
 
-## 2. Python Engine Testing
+## 2. Phase 1 CLI Contract Testing
+
+These tests verify the standalone engine's public interface: CLI flags, stdout protocol, exit codes, and resume behavior. They require no Node.js, Redis, or running services — just Python and a temp SQLite file.
+
+**File structure:** `engine/tests/cli/`
+
+**Framework:** pytest + `subprocess`
+
+```python
+# engine/tests/cli/test_cli_contract.py
+
+import json
+import subprocess
+import sqlite3
+from pathlib import Path
+import pytest
+
+STRATEGY_FIXTURE = "engine/tests/fixtures/simple_sma_strategy.json"
+PARAM_GRID_FIXTURE = "engine/tests/fixtures/simple_param_grid.json"
+OHLCV_FIXTURE_DIR = "engine/tests/fixtures/data_cache"   # tiny synthetic Parquet
+
+
+class TestCLIFlags:
+    """Verify CLI accepts valid flags and rejects invalid ones."""
+
+    def test_missing_strategy_flag__exits_with_code_1(self, tmp_path):
+        result = subprocess.run(
+            ["python", "engine/run.py", "--instruments", "EURUSD", "--timeframes", "H1",
+             "--db", str(tmp_path / "test.db"), "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 1
+        assert "strategy" in result.stderr.lower()
+
+    def test_invalid_strategy_json__exits_with_code_1(self, tmp_path):
+        bad_strategy = tmp_path / "bad.json"
+        bad_strategy.write_text("{not valid json")
+        result = subprocess.run(
+            ["python", "engine/run.py", "--strategy", str(bad_strategy),
+             "--instruments", "EURUSD", "--timeframes", "H1",
+             "--db", str(tmp_path / "test.db"), "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 1
+
+    def test_strategy_failing_schema_validation__exits_with_code_1(self, tmp_path):
+        bad_strategy = tmp_path / "schema_fail.json"
+        bad_strategy.write_text('{"version": "1.0"}')  # missing required fields
+        result = subprocess.run(
+            ["python", "engine/run.py", "--strategy", str(bad_strategy),
+             "--instruments", "EURUSD", "--timeframes", "H1",
+             "--db", str(tmp_path / "test.db"), "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 1
+        assert "validation" in result.stderr.lower()
+
+    def test_missing_data_file__exits_with_code_1(self, tmp_path):
+        result = subprocess.run(
+            ["python", "engine/run.py", "--strategy", STRATEGY_FIXTURE,
+             "--instruments", "NONEXISTENT", "--timeframes", "H1",
+             "--db", str(tmp_path / "test.db"), "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 1
+        assert "parquet" in result.stderr.lower() or "not found" in result.stderr.lower()
+
+
+class TestStdoutProtocol:
+    """Verify stdout is valid newline-delimited JSON with the correct message types."""
+
+    @pytest.fixture
+    def run_result(self, tmp_path):
+        result = subprocess.run(
+            ["python", "engine/run.py",
+             "--strategy", STRATEGY_FIXTURE,
+             "--instruments", "EURUSD",
+             "--timeframes", "H1",
+             "--param-grid", PARAM_GRID_FIXTURE,
+             "--db", str(tmp_path / "test.db"),
+             "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True, text=True
+        )
+        return result
+
+    def test_exit_code_zero_on_success(self, run_result):
+        assert run_result.returncode == 0
+
+    def test_stdout_is_valid_jsonl(self, run_result):
+        lines = [l for l in run_result.stdout.strip().splitlines() if l]
+        for line in lines:
+            json.loads(line)  # raises if invalid
+
+    def test_stdout_contains_progress_messages(self, run_result):
+        messages = [json.loads(l) for l in run_result.stdout.strip().splitlines() if l]
+        types = [m["type"] for m in messages]
+        assert "progress" in types
+
+    def test_stdout_contains_result_messages(self, run_result):
+        messages = [json.loads(l) for l in run_result.stdout.strip().splitlines() if l]
+        types = [m["type"] for m in messages]
+        assert "result" in types
+
+    def test_stdout_ends_with_completed_message(self, run_result):
+        last_line = run_result.stdout.strip().splitlines()[-1]
+        last = json.loads(last_line)
+        assert last["type"] == "completed"
+        assert "best_params" in last
+        assert "best_metrics" in last
+        assert "db_path" in last
+
+    def test_progress_pct_is_monotonically_increasing(self, run_result):
+        messages = [json.loads(l) for l in run_result.stdout.strip().splitlines() if l]
+        progress = [m["pct"] for m in messages if m["type"] == "progress"]
+        assert progress == sorted(progress)
+        assert progress[-1] <= 100
+
+    def test_result_messages_have_all_required_metrics(self, run_result):
+        messages = [json.loads(l) for l in run_result.stdout.strip().splitlines() if l]
+        results = [m for m in messages if m["type"] == "result"]
+        required_metrics = {"sharpe_ratio", "max_drawdown", "win_rate", "net_pnl",
+                            "num_trades", "profit_factor", "calmar_ratio"}
+        for r in results:
+            assert required_metrics.issubset(set(r["metrics"].keys()))
+
+    def test_errors_go_to_stderr_not_stdout(self, tmp_path):
+        """A failing run must not pollute stdout with non-JSON."""
+        result = subprocess.run(
+            ["python", "engine/run.py",
+             "--strategy", STRATEGY_FIXTURE,
+             "--instruments", "NONEXISTENT",
+             "--timeframes", "H1",
+             "--db", str(tmp_path / "test.db"),
+             "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True, text=True
+        )
+        # stdout must be empty or valid JSONL (no raw tracebacks)
+        for line in result.stdout.strip().splitlines():
+            if line:
+                json.loads(line)  # raises if error text leaked to stdout
+
+
+class TestSQLitePersistence:
+    """Verify results are written to SQLite correctly after a CLI run."""
+
+    def test_job_row_created_with_completed_status(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        subprocess.run(
+            ["python", "engine/run.py",
+             "--strategy", STRATEGY_FIXTURE,
+             "--instruments", "EURUSD",
+             "--timeframes", "H1",
+             "--db", str(db_path),
+             "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True
+        )
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("SELECT status FROM jobs ORDER BY created_at DESC LIMIT 1").fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "completed"
+
+    def test_runs_written_per_param_combo(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        subprocess.run(
+            ["python", "engine/run.py",
+             "--strategy", STRATEGY_FIXTURE,
+             "--instruments", "EURUSD",
+             "--timeframes", "H1",
+             "--param-grid", PARAM_GRID_FIXTURE,  # 3 values × 2 values = 6 combos
+             "--db", str(db_path),
+             "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True
+        )
+        conn = sqlite3.connect(db_path)
+        count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+        conn.close()
+        assert count == 6
+
+
+class TestResumeJob:
+    """Verify an interrupted job can be resumed without re-running completed runs."""
+
+    def test_resume_skips_already_completed_runs(self, tmp_path):
+        db_path = tmp_path / "test.db"
+
+        # First run (full)
+        r1 = subprocess.run(
+            ["python", "engine/run.py",
+             "--strategy", STRATEGY_FIXTURE,
+             "--instruments", "EURUSD",
+             "--timeframes", "H1",
+             "--param-grid", PARAM_GRID_FIXTURE,
+             "--db", str(db_path),
+             "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True, text=True
+        )
+        completed = json.loads(r1.stdout.strip().splitlines()[-1])
+        job_id = completed["job_id"]
+
+        conn = sqlite3.connect(db_path)
+        runs_before = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+        conn.close()
+
+        # Resume (nothing to do — should complete immediately with same count)
+        r2 = subprocess.run(
+            ["python", "engine/run.py",
+             "--resume-job", job_id,
+             "--db", str(db_path),
+             "--data-dir", OHLCV_FIXTURE_DIR],
+            capture_output=True, text=True
+        )
+        assert r2.returncode == 0
+
+        conn = sqlite3.connect(db_path)
+        runs_after = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+        conn.close()
+
+        assert runs_after == runs_before  # no duplicate runs inserted
+```
+
+**Fixtures needed** (`engine/tests/fixtures/`):
+
+| File | Description |
+|------|-------------|
+| `simple_sma_strategy.json` | Minimal valid `StrategyDefinition` v1 using a single SMA |
+| `simple_param_grid.json` | Small grid (e.g. `{"sma_period": [10, 20, 30], "sl_pips": [15, 20]}`) |
+| `data_cache/EURUSD/H1.parquet` | Synthetic OHLCV data (500 bars), deterministic seed |
+
+The synthetic Parquet is generated once by a script (`engine/tests/fixtures/generate_fixtures.py`) and committed to the repo. It must be small (< 100 KB) and produce deterministic backtest results.
+
+---
+
+## 3. Python Engine Testing
 
 ### Unit Tests
 
@@ -213,14 +450,14 @@ class TestBacktestCorrectness:
         # These numbers are from a prior run (fixtures/expected_metrics.json)
         EXPECTED_TRADES = 23
         EXPECTED_WIN_RATE = 0.56
-        EXPECTED_SHARPE = 1.42  ± 0.05
+        EXPECTED_SHARPE_MIN, EXPECTED_SHARPE_MAX = 1.37, 1.47  # ±0.05 tolerance
         
         assert result.num_trades == EXPECTED_TRADES, \
             f"Expected {EXPECTED_TRADES} trades, got {result.num_trades}"
         assert abs(result.win_rate - EXPECTED_WIN_RATE) < 0.001, \
             f"Expected win rate {EXPECTED_WIN_RATE}, got {result.win_rate}"
-        assert abs(result.sharpe_ratio - EXPECTED_SHARPE) < 0.05, \
-            f"Expected Sharpe {EXPECTED_SHARPE}, got {result.sharpe_ratio}"
+        assert EXPECTED_SHARPE_MIN <= result.sharpe_ratio <= EXPECTED_SHARPE_MAX, \
+            f"Expected Sharpe in [{EXPECTED_SHARPE_MIN}, {EXPECTED_SHARPE_MAX}], got {result.sharpe_ratio}"
     
     def test_optimization__grid_search__converges_to_best_params(self, sample_ohlcv, sample_strategy_definition):
         """Grid search should find parameter combination with highest Sharpe."""
@@ -282,7 +519,7 @@ def mock_sqlite(tmp_path):
 
 ---
 
-## 3. Node.js API Testing
+## 4. Node.js API Testing
 
 ### Unit Tests
 
@@ -472,7 +709,7 @@ describe('E2E: Wizard → Job → Results', () => {
 
 ---
 
-## 4. React UI Testing
+## 5. React UI Testing
 
 ### Component Tests
 
@@ -611,7 +848,7 @@ describe('useJobProgress', () => {
 
 ---
 
-## 5. E2E Testing (Playwright)
+## 6. E2E Testing (Playwright)
 
 **File structure:** `ui/tests/e2e/*.spec.ts`
 
@@ -681,7 +918,7 @@ test.describe('Full User Journey: Wizard → Backtest', () => {
 
 ---
 
-## 6. CI/CD Pipeline
+## 7. CI/CD Pipeline
 
 ### GitHub Actions
 
@@ -697,43 +934,68 @@ on:
     branches: [main, develop]
 
 jobs:
-  # Python tests
-  test-engine:
+  # ── Phase 1: CLI contract (no services required) ──────────────────────────
+  test-cli:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ['3.11', '3.12']
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      
+
+      - name: Install engine dependencies
+        run: cd engine && pip install -r requirements.txt
+
+      - name: Generate test fixtures (synthetic OHLCV)
+        run: python engine/tests/fixtures/generate_fixtures.py
+
+      - name: CLI contract tests (no Redis, no Node.js)
+        run: cd engine && pytest tests/cli -v
+
+  # ── Phase 1+: Python unit + integration ───────────────────────────────────
+  test-engine:
+    runs-on: ubuntu-latest
+    needs: test-cli   # engine tests only run if CLI contract passes
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
       - name: Install dependencies
         run: |
           cd engine
           pip install -r requirements.txt
           pip install pytest pytest-cov mypy black flake8
-      
+
       - name: Lint (mypy)
         run: cd engine && mypy src --strict
-      
+
       - name: Format check (black)
         run: cd engine && black --check src tests
-      
+
       - name: Unit tests
         run: cd engine && pytest tests/unit -v --cov=src --cov-report=xml
-      
+
       - name: Integration tests
         run: cd engine && pytest tests/integration -v
-      
+
       - name: Upload coverage
         uses: codecov/codecov-action@v3
         with:
           files: ./engine/coverage.xml
 
+  # ── Phase 3+: Node.js API (requires Redis) ────────────────────────────────
   # Node.js tests
   test-api:
     runs-on: ubuntu-latest
@@ -873,16 +1135,19 @@ jobs:
 
 ### Test Execution Timing
 
-| Suite | Time | Trigger |
-|-------|------|---------|
-| **Unit tests (all)** | 5–10 min | Every commit (PR) |
-| **Integration tests** | 10–15 min | Every commit (PR) |
-| **E2E tests (Playwright)** | 20–30 min | Nightly (main branch only) |
-| **Full suite** | < 30 min | Main branch pre-deploy |
+| Suite | Time | Trigger | Services needed |
+|-------|------|---------|----------------|
+| **CLI contract tests** | 1–2 min | Every commit (PR) | Python only |
+| **Engine unit tests** | 3–5 min | Every commit (PR) | Python only |
+| **Engine integration tests** | 5–10 min | Every commit (PR) | Python + SQLite |
+| **Node.js unit + integration** | 5–10 min | Every commit (PR) | Python + Redis |
+| **React component tests** | 3–5 min | Every commit (PR) | None |
+| **E2E tests (Playwright)** | 20–30 min | Nightly (main branch only) | Full stack |
+| **Full suite** | < 35 min | Main branch pre-deploy | Full stack |
 
 ---
 
-## 7. Testing Long-Running Jobs Without Actually Running Them
+## 8. Testing Long-Running Jobs Without Actually Running Them
 
 ### Problem
 
