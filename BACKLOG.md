@@ -61,6 +61,31 @@ Progress tracker for all phases and milestones. Updated at the end of each devel
 - [x] `engine/README.md` — onboarding, CLI reference, JSONL spec, metrics table (English)
 - [x] **55 tests passing, 92% coverage**
 
+### M7 — Bug fix: indicator-to-indicator comparisons ✅
+Discovered during first-agent onboarding test (trend-following strategy simulation):
+- [x] **Bug fixed**: `_check_condition()` in `strategy.py` evaluated `>`, `<`, `>=`, `<=` only against
+  numeric `value`; when `compare_to` was set (indicator-vs-indicator), it always returned `False` silently.
+  Fix: resolve `compare_to` to the other indicator's current value before comparison.
+- [x] `tests/fixtures/sma_trend_bounce_strategy.json` — 3-SMA trend bounce fixture (verified working)
+- [x] `tests/fixtures/sma_trend_bounce_grid.json` — reference param grid
+- [x] **55/55 tests still passing** after fix
+
+### Known limitations (to address in future milestones)
+- **Param grid key collision**: when multiple indicators share the same param key (e.g. `"period"`),
+  the grid applies the same swept value to ALL of them. Multi-indicator strategies with different
+  periods must be iterated manually (agent feedback loop) rather than via `--param-grid`.
+  → To fix in Phase 3: named param namespacing (e.g. `"fast_sma.period"`, `"slow_sma.period"`).
+- **ATR/ADX use only Close**: `StrategyComposer` passes only `data.Close` to all indicators via
+  `self_bt.I(fn, data.Close, ...)`. ATR and ADX accept optional `high`/`low` but receive `close`
+  for all three, reducing accuracy. Real H/L data is available in the Parquet files.
+  → To fix in Phase 3: pass `data.High`, `data.Low` to indicators that declare those parameters.
+- **No automated feedback loop**: the agent iteration loop described in `AGENTS.md` is manual
+  at Phase 1 (read JSONL → edit JSON → re-run). The automated loop (BullMQ + WebSocket + LLM
+  refinement) is Phase 3 scope.
+- **Fixture data is synthetic**: 500 bars of random-walk OHLCV (2020-01-01 to 2020-01-21 H1).
+  Trend/crossover alignment differs from real market data; strategies validated here need
+  re-testing on real data before use.
+
 ---
 
 ## Phase 2 — Strategy Wizard (LLM + React) ✅ DONE
