@@ -1,0 +1,37 @@
+{
+  "version": "1",
+  "name": "SMA Crossover",
+  "variant": "basic",
+  "indicators": [
+    {
+      "name": "fast_sma",
+      "type": "sma",
+      "params": {"period": 10}
+    },
+    {
+      "name": "slow_sma",
+      "type": "sma",
+      "params": {"period": 30}
+    }
+  ],
+  "entry_rules": [
+    {
+      "indicator": "fast_sma",
+      "condition": "crosses_above",
+      "compare_to": "slow_sma"
+    }
+  ],
+  "exit_rules": [
+    {
+      "indicator": "fast_sma",
+      "condition": "crosses_below",
+      "compare_to": "slow_sma"
+    }
+  ],
+  "position_management": {
+    "size": 0.02,
+    "sl_pips": null,
+    "tp_pips": null,
+    "max_open_trades": 1
+  }
+}
