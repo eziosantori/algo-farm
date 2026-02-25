@@ -1,0 +1,47 @@
+{
+  "version": "1",
+  "name": "SMA Trend Bounce",
+  "variant": "basic",
+  "indicators": [
+    {
+      "name": "fast_sma",
+      "type": "sma",
+      "params": {"period": 8}
+    },
+    {
+      "name": "mid_sma",
+      "type": "sma",
+      "params": {"period": 21}
+    },
+    {
+      "name": "slow_sma",
+      "type": "sma",
+      "params": {"period": 50}
+    }
+  ],
+  "entry_rules": [
+    {
+      "indicator": "mid_sma",
+      "condition": ">",
+      "compare_to": "slow_sma"
+    },
+    {
+      "indicator": "fast_sma",
+      "condition": ">",
+      "compare_to": "mid_sma"
+    }
+  ],
+  "exit_rules": [
+    {
+      "indicator": "fast_sma",
+      "condition": "crosses_below",
+      "compare_to": "mid_sma"
+    }
+  ],
+  "position_management": {
+    "size": 0.02,
+    "sl_pips": null,
+    "tp_pips": null,
+    "max_open_trades": 1
+  }
+}

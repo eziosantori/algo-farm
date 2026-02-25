@@ -79,14 +79,28 @@ def _evaluate_rules(strategy: Strategy, rules: list[RuleDef]) -> bool:  # type: 
 
 def _check_condition(strategy: Strategy, rule: RuleDef, current: float) -> bool:  # type: ignore[type-arg]
     cond = rule.condition
-    if cond == ">" and rule.value is not None:
-        return current > rule.value
-    if cond == "<" and rule.value is not None:
-        return current < rule.value
-    if cond == ">=" and rule.value is not None:
-        return current >= rule.value
-    if cond == "<=" and rule.value is not None:
-        return current <= rule.value
+
+    # Resolve comparison target: numeric value or another indicator's current value
+    if rule.value is not None:
+        target: float | None = rule.value
+    elif rule.compare_to is not None:
+        other_ind = getattr(strategy, rule.compare_to, None)
+        if other_ind is None:
+            return False
+        target = float(other_ind[-1])
+        if np.isnan(target):
+            return False
+    else:
+        target = None
+
+    if cond == ">" and target is not None:
+        return current > target
+    if cond == "<" and target is not None:
+        return current < target
+    if cond == ">=" and target is not None:
+        return current >= target
+    if cond == "<=" and target is not None:
+        return current <= target
     if cond == "crosses_above" and rule.compare_to is not None:
         other = getattr(strategy, rule.compare_to, None)
         if other is None or len(other) < 2:
