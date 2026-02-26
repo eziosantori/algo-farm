@@ -172,6 +172,38 @@ Strategy lifecycle folder structure and Claude Code slash commands for the core 
 - [ ] M5 — React Dashboard: equity curve, drawdown, heatmap, live progress
 - [ ] M6 — Integration test: job submit via API → completion → results in SQLite
 
+### M7 — Claude Code Team: Strategy Development Team ⬜ PLANNED
+> Evoluzione delle skill Phase 2 (single-agent slash commands) in un team multi-agente
+> con ruoli specializzati. Si attiva quando Phase 3 introduce job asincroni e dati reali.
+
+**Trigger per implementazione:** Phase 3 operativa (BullMQ + dati reali disponibili).
+
+**Struttura team:**
+```
+Team "strategy-dev"
+├── strategist     — genera/modifica strategie, decide i cambiamenti basandosi sui risultati
+├── backtester     — esegue engine/run.py, legge JSONL, riporta metriche strutturate
+├── analyst        — interpreta pattern nei risultati, propone param grid, identifica regime
+└── validator      — (attivo da Phase 4) robustness suite: walk-forward, Monte Carlo, OOS
+```
+
+**Workflow team (sostituisce `/iterate` singolo agente):**
+1. `strategist` riceve obiettivo (es. "ottimizza per Sharpe > 1.5 su EURUSD H1")
+2. `strategist` scrive/modifica `draft/<name>.json` e assegna task a `backtester`
+3. `backtester` lancia subprocess, streamma JSONL, salva metriche, notifica `analyst`
+4. `analyst` legge metriche, identifica collo di bottiglia, propone modifica → notifica `strategist`
+5. Loop fino a target o N iterazioni
+6. `validator` (Phase 4+) esegue robustness check prima della promozione a `validated/`
+
+**Parallelismo:** `backtester` può essere spawned multipli per testare diversi instrument/timeframe
+in parallelo, riducendo il tempo del loop di ottimizzazione.
+
+**Skills esistenti come subagent prompts:**
+- `/backtest` → prompt del ruolo `backtester`
+- `/optimize` → coordina `backtester` + `analyst`
+- `/iterate`  → coordina l'intero team
+- `/new-strategy` → rimane skill singolo agente (task breve, non richiede team)
+
 ---
 
 ## Phase 4 — Robustness Validation Suite ⬜ TODO
