@@ -149,6 +149,15 @@ Discovered during first-agent onboarding test (trend-following strategy simulati
 - [x] `ui/README.md` — setup, proxy note, pages reference
 - [x] `BACKLOG.md` updated
 
+### M6b — Claude Code Skills ✅
+Strategy lifecycle folder structure and Claude Code slash commands for the core workflow:
+- [x] `engine/strategies/{draft,optimizing,validated,production}/` — lifecycle folders (allineate a Phase 5 Strategy Vault)
+- [x] `.claude/commands/new-strategy.md` — `/new-strategy <description>`: genera strategy.json valido e salva in `draft/`
+- [x] `.claude/commands/backtest.md` — `/backtest <file> [--instruments] [--timeframes]`: lancia motore e mostra tabella metriche
+- [x] `.claude/commands/optimize.md` — `/optimize <file> [--metric]`: grid search con tabella risultati ordinata
+- [x] `.claude/commands/iterate.md` — `/iterate <file> [--target] [--iterations]`: loop autonomo backtest → analisi → modifica
+- [x] `.claude/settings.local.json` — permessi Bash per `python engine/run.py`
+
 ---
 
 ## Phase 3 — Node.js API + BullMQ + Dashboard ⬜ TODO

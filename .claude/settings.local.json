@@ -3,7 +3,12 @@
     "allow": [
       "Bash(.venv/bin/pytest:*)",
       "Bash(npx node-gyp:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(python engine/run.py:*)",
+      "Bash(cd engine*)",
+      "Bash(source .venv/bin/activate*)",
+      "Bash(mkdir -p engine/strategies/*)",
+      "Bash(touch engine/strategies/*)"
     ]
   }
 }
