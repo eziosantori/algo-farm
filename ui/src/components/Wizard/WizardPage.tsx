@@ -4,15 +4,23 @@ import { useWizardStore } from "../../store/wizard.ts";
 import type { ProviderId } from "../../store/wizard.ts";
 import { StrategyPreview } from "./StrategyPreview.tsx";
 
-const PROVIDER_OPTIONS: { value: ProviderId; label: string }[] = [
-  { value: "gemini", label: "Gemini (free)" },
+const PROVIDER_OPTIONS: { value: ProviderId; label: string; badge?: string }[] = [
+  { value: "gemini", label: "Gemini", badge: "free" },
   { value: "claude", label: "Claude" },
-  { value: "openrouter", label: "Qwen / OpenRouter (free)" },
+  { value: "openrouter", label: "Qwen / OpenRouter", badge: "free" },
+];
+
+const EXAMPLES = [
+  "RSI strategy: enter long when RSI < 30, exit when RSI > 70",
+  "SuperTrend + RSI: enter when SuperTrend is bullish and RSI > 50",
+  "EMA crossover: buy when EMA 20 crosses above EMA 50",
 ];
 
 export function WizardPage() {
   const [input, setInput] = useState("");
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle"
+  );
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -23,12 +31,16 @@ export function WizardPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function generate() {
     const msg = input.trim();
     if (!msg || isLoading) return;
     setInput("");
     await sendMessage(msg);
+  }
+
+  function handleSubmit(e: React.SyntheticEvent) {
+    e.preventDefault();
+    void generate();
   }
 
   async function handleSave() {
@@ -42,163 +54,182 @@ export function WizardPage() {
     }
   }
 
+  const providerLabel =
+    PROVIDER_OPTIONS.find((o) => o.value === provider)?.label ?? provider;
+
   return (
-    <div>
-      <h1 style={styles.heading}>Strategy Wizard</h1>
-      <p style={styles.subtitle}>
-        Describe your trading strategy in natural language and an LLM will generate it for you.
-      </p>
+    <div className="max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          Strategy Wizard
+        </h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Describe your trading strategy in natural language — the LLM will generate it for you.
+        </p>
+      </div>
 
       {/* Provider selector */}
-      <div style={styles.providerRow}>
-        <label style={styles.providerLabel} htmlFor="provider-select">Provider:</label>
-        <select
-          id="provider-select"
-          value={provider}
-          onChange={(e) => setProvider(e.target.value as ProviderId)}
-          style={styles.providerSelect}
-          disabled={isLoading}
-        >
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+          Provider:
+        </span>
+        <div className="flex gap-1">
           {PROVIDER_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+            <button
+              key={opt.value}
+              onClick={() => setProvider(opt.value)}
+              disabled={isLoading}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${
+                provider === opt.value
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              }`}
+            >
+              {opt.label}
+              {opt.badge && (
+                <span
+                  className={`px-1.5 py-px rounded text-[10px] font-semibold ${
+                    provider === opt.value
+                      ? "bg-white/20 text-white"
+                      : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+                  }`}
+                >
+                  {opt.badge}
+                </span>
+              )}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
       {/* Chat messages */}
-      <div style={styles.chatBox}>
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 min-h-[160px] max-h-[340px] overflow-y-auto p-4 mb-4">
         {messages.length === 0 && (
-          <p style={styles.placeholder}>
-            Try: &ldquo;RSI strategy: enter long when RSI &lt; 30, exit when RSI &gt; 70&rdquo;
-          </p>
+          <div className="h-full flex flex-col items-center justify-center gap-3 py-4">
+            <p className="text-sm text-gray-400 dark:text-gray-500 italic text-center">
+              Describe your strategy below, or try one of these examples:
+            </p>
+            <div className="flex flex-col gap-1.5 w-full max-w-md">
+              {EXAMPLES.map((ex) => (
+                <button
+                  key={ex}
+                  onClick={() => setInput(ex)}
+                  className="text-left text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-900/30 dark:hover:text-blue-300 transition-colors border border-gray-200 dark:border-gray-700"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
+
         {messages.map((m, i) => (
-          <div key={i} style={m.role === "user" ? styles.userMsg : styles.assistantMsg}>
-            <span style={styles.roleLabel}>{m.role === "user" ? "You" : PROVIDER_OPTIONS.find((o) => o.value === provider)?.label ?? provider}</span>
-            <p style={styles.msgContent}>{m.content}</p>
+          <div
+            key={i}
+            className={`mb-3 ${m.role === "user" ? "flex justify-end" : "flex justify-start"}`}
+          >
+            <div
+              className={`max-w-[85%] rounded-xl px-4 py-2.5 ${
+                m.role === "user"
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+              }`}
+            >
+              <p className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${
+                m.role === "user" ? "text-blue-200" : "text-gray-400"
+              }`}>
+                {m.role === "user" ? "You" : providerLabel}
+              </p>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</p>
+            </div>
           </div>
         ))}
+
         {isLoading && (
-          <div style={styles.assistantMsg}>
-            <span style={styles.roleLabel}>{PROVIDER_OPTIONS.find((o) => o.value === provider)?.label ?? provider}</span>
-            <p style={styles.msgContent}>Generating strategy…</p>
+          <div className="flex justify-start mb-3">
+            <div className="bg-gray-100 dark:bg-gray-800 rounded-xl px-4 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide mb-1 text-gray-400">
+                {providerLabel}
+              </p>
+              <div className="flex items-center gap-1.5">
+                {[0, 1, 2].map((n) => (
+                  <span
+                    key={n}
+                    className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce"
+                    style={{ animationDelay: `${n * 150}ms` }}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {error && <p style={styles.error}>{error}</p>}
-
-      {/* Strategy preview */}
-      {currentStrategy && (
-        <div>
-          <StrategyPreview strategy={currentStrategy} />
-          <button
-            onClick={handleSave}
-            disabled={saveStatus === "saving" || saveStatus === "saved"}
-            style={styles.saveBtn}
-          >
-            {saveStatus === "saving"
-              ? "Saving…"
-              : saveStatus === "saved"
-                ? "Saved! Redirecting…"
-                : saveStatus === "error"
-                  ? "Error — retry"
-                  : "Save Strategy"}
-          </button>
+      {error && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-4 py-2.5 text-sm text-red-700 dark:text-red-400">
+          <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
+          </svg>
+          {error}
         </div>
       )}
 
       {/* Input form */}
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void handleSubmit(e as unknown as React.FormEvent);
-            }
-          }}
-          placeholder="Describe your strategy…"
-          rows={3}
-          disabled={isLoading}
-          style={styles.textarea}
-        />
-        <button type="submit" disabled={isLoading || !input.trim()} style={styles.submitBtn}>
+      <form onSubmit={handleSubmit} className="flex gap-2 items-end">
+        <div className="flex-1">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void generate();
+              }
+            }}
+            placeholder="Describe your strategy… (Enter to send, Shift+Enter for newline)"
+            rows={3}
+            disabled={isLoading}
+            className="w-full rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60 resize-none"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={isLoading || !input.trim()}
+          className="flex-shrink-0 px-5 py-3 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
           {isLoading ? "Generating…" : "Generate"}
         </button>
       </form>
+
+      {/* Strategy preview */}
+      {currentStrategy && (
+        <div className="mt-4">
+          <StrategyPreview strategy={currentStrategy} />
+          <div className="mt-3 flex justify-end">
+            <button
+              onClick={handleSave}
+              disabled={saveStatus === "saving" || saveStatus === "saved"}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed ${
+                saveStatus === "saved"
+                  ? "bg-green-600 text-white"
+                  : saveStatus === "error"
+                    ? "bg-red-600 text-white hover:bg-red-700"
+                    : "bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
+              }`}
+            >
+              {saveStatus === "saving"
+                ? "Saving…"
+                : saveStatus === "saved"
+                  ? "Saved! Redirecting…"
+                  : saveStatus === "error"
+                    ? "Error — retry"
+                    : "Save Strategy"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  heading: { marginBottom: "0.25rem" },
-  subtitle: { color: "#6b7280", marginBottom: "0.75rem", marginTop: 0 },
-  providerRow: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" },
-  providerLabel: { fontSize: "0.85rem", color: "#374151", fontWeight: 500 },
-  providerSelect: {
-    padding: "0.25rem 0.5rem",
-    borderRadius: "6px",
-    border: "1px solid #d1d5db",
-    fontSize: "0.85rem",
-    cursor: "pointer",
-  },
-  chatBox: {
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
-    padding: "1rem",
-    minHeight: "120px",
-    maxHeight: "320px",
-    overflowY: "auto",
-    backgroundColor: "#fff",
-    marginBottom: "1rem",
-  },
-  placeholder: { color: "#9ca3af", fontStyle: "italic", margin: 0 },
-  userMsg: {
-    backgroundColor: "#eff6ff",
-    borderRadius: "6px",
-    padding: "0.5rem 0.75rem",
-    marginBottom: "0.5rem",
-  },
-  assistantMsg: {
-    backgroundColor: "#f0fdf4",
-    borderRadius: "6px",
-    padding: "0.5rem 0.75rem",
-    marginBottom: "0.5rem",
-  },
-  roleLabel: { fontSize: "0.7rem", fontWeight: "bold", textTransform: "uppercase", color: "#6b7280" },
-  msgContent: { margin: "0.25rem 0 0", fontSize: "0.9rem" },
-  error: { color: "#dc2626", marginBottom: "0.5rem" },
-  saveBtn: {
-    marginTop: "0.75rem",
-    padding: "0.5rem 1.25rem",
-    backgroundColor: "#16a34a",
-    color: "#fff",
-    border: "none",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontWeight: "bold",
-  },
-  form: { marginTop: "1.5rem", display: "flex", gap: "0.75rem", alignItems: "flex-start" },
-  textarea: {
-    flex: 1,
-    padding: "0.5rem 0.75rem",
-    borderRadius: "6px",
-    border: "1px solid #d1d5db",
-    fontSize: "0.9rem",
-    resize: "vertical",
-    fontFamily: "inherit",
-  },
-  submitBtn: {
-    padding: "0.5rem 1.25rem",
-    backgroundColor: "#2563eb",
-    color: "#fff",
-    border: "none",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontWeight: "bold",
-    alignSelf: "flex-end",
-  },
-};

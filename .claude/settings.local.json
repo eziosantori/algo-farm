@@ -13,7 +13,11 @@
       "WebFetch(domain:pypi.org)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:dukascopy-node.app)",
-      "Bash(source:*)"
+      "Bash(source:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

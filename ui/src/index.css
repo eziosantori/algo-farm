@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -------------------------------------------------------------------------
+   Design tokens — light mode
+   ---------------------------------------------------------------------- */
+:root {
+  --surface: #ffffff;
+  --surface-raised: #f9fafb;
+  --surface-border: #e5e7eb;
+}
+
+/* Dark mode tokens */
+.dark {
+  --surface: #111827;
+  --surface-raised: #1f2937;
+  --surface-border: #374151;
+}
+
+/* -------------------------------------------------------------------------
+   Base
+   ---------------------------------------------------------------------- */
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+    font-family: Inter, system-ui, sans-serif;
+  }
+
+  /* Monospace numbers for metric values */
+  .font-metric {
+    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Scrollbar (dark mode friendly)
+   ---------------------------------------------------------------------- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-transparent; }
+::-webkit-scrollbar-thumb { @apply bg-gray-300 dark:bg-gray-600 rounded-full; }

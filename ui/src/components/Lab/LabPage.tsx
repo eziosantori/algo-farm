@@ -1,10 +1,65 @@
 import { useState, useEffect } from "react";
 import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from "recharts";
+import {
   api,
   type LabSessionSummary,
   type LabSessionDetail,
+  type BacktestResultDetail,
   type ResultStatus,
 } from "../../api/client.ts";
+
+// ---------------------------------------------------------------------------
+// Metric colour helpers
+// ---------------------------------------------------------------------------
+
+function sharpeClass(v: number) {
+  if (v >= 1.0) return "text-emerald-600 dark:text-emerald-400";
+  if (v >= 0.4) return "text-amber-600 dark:text-amber-400";
+  return "text-red-500 dark:text-red-400";
+}
+function ddClass(v: number) {
+  if (v >= -10) return "text-emerald-600 dark:text-emerald-400";
+  if (v >= -20) return "text-amber-600 dark:text-amber-400";
+  return "text-red-500 dark:text-red-400";
+}
+function winClass(v: number) {
+  if (v >= 50) return "text-emerald-600 dark:text-emerald-400";
+  if (v >= 40) return "text-amber-600 dark:text-amber-400";
+  return "text-red-500 dark:text-red-400";
+}
+function pfClass(v: number) {
+  if (v >= 1.5) return "text-emerald-600 dark:text-emerald-400";
+  if (v >= 1.2) return "text-amber-600 dark:text-amber-400";
+  return "text-red-500 dark:text-red-400";
+}
+function returnClass(v: number) {
+  if (v > 0) return "text-emerald-600 dark:text-emerald-400";
+  return "text-red-500 dark:text-red-400";
+}
+
+// ---------------------------------------------------------------------------
+// Status badge styles
+// ---------------------------------------------------------------------------
+
+const SESSION_STATUS: Record<string, string> = {
+  running:  "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  completed:"bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400",
+};
+
+const RESULT_STATUS: Record<string, string> = {
+  pending:              "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+  validated:            "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  rejected:             "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
+  production_standard:  "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400",
+  production_aggressive:"bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400",
+  production_defensive: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400",
+};
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
 
 export function LabPage() {
   const [sessions, setSessions] = useState<LabSessionSummary[]>([]);
@@ -22,195 +77,219 @@ export function LabPage() {
 
   async function toggleExpand(id: string) {
     if (expanded[id] !== undefined) {
-      setExpanded((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
+      setExpanded((prev) => { const n = { ...prev }; delete n[id]; return n; });
       return;
     }
     try {
       const detail = await api.getLabSession(id);
       setExpanded((prev) => ({ ...prev, [id]: detail }));
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Error";
-      console.error(msg);
+      console.error(e);
       setExpanded((prev) => ({ ...prev, [id]: null }));
     }
   }
 
-  async function updateResultStatus(
-    sessionId: string,
-    resultId: string,
-    status: ResultStatus
-  ) {
+  async function updateResultStatus(sessionId: string, resultId: string, status: ResultStatus) {
     try {
       const updated = await api.updateLabResultStatus(resultId, status);
       setExpanded((prev) => {
-        const detail = prev[sessionId];
-        if (!detail) return prev;
-        return {
-          ...prev,
-          [sessionId]: {
-            ...detail,
-            results: detail.results.map((r) => (r.id === resultId ? updated : r)),
-          },
-        };
+        const d = prev[sessionId];
+        if (!d) return prev;
+        return { ...prev, [sessionId]: { ...d, results: d.results.map((r) => r.id === resultId ? updated : r) } };
       });
-    } catch (e: unknown) {
-      console.error("Failed to update result status", e);
-    }
+    } catch (e: unknown) { console.error(e); }
   }
 
-  if (loading) return <p>Loading lab sessions…</p>;
-  if (error) return <p style={{ color: "#dc2626" }}>Error: {error}</p>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} />;
 
   return (
     <div>
-      <h1 style={{ marginBottom: "1.5rem" }}>Strategy Lab</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Strategy Lab</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Multi-asset backtest sessions. Run <code className="font-mono text-xs">/strategy-lab</code> to create a new session.
+        </p>
+      </div>
 
       {sessions.length === 0 ? (
-        <p style={{ color: "#6b7280" }}>No lab sessions yet. Run the /strategy-lab skill to create one.</p>
+        <EmptyState />
       ) : (
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Strategy</th>
-              <th style={styles.th}>Status</th>
-              <th style={styles.th}>Instruments</th>
-              <th style={styles.th}>Timeframes</th>
-              <th style={styles.th}>Results</th>
-              <th style={styles.th}>Created</th>
-              <th style={styles.th}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sessions.map((s) => (
-              <>
-                <tr key={s.id} style={styles.tr}>
-                  <td style={styles.td}>{s.strategy_name}</td>
-                  <td style={styles.td}>
-                    <span style={sessionStatusBadge(s.status)}>{s.status}</span>
-                  </td>
-                  <td style={styles.td}>
-                    <span style={styles.chips}>{s.instruments.join(", ")}</span>
-                  </td>
-                  <td style={styles.td}>
-                    <span style={styles.chips}>{s.timeframes.join(", ")}</span>
-                  </td>
-                  <td style={styles.td}>
-                    {s.validated_results}/{s.total_results} validated
-                  </td>
-                  <td style={styles.td}>{new Date(s.created_at).toLocaleString()}</td>
-                  <td style={styles.td}>
-                    <button onClick={() => void toggleExpand(s.id)} style={styles.viewBtn}>
-                      {expanded[s.id] !== undefined ? "Hide" : "View Results"}
-                    </button>
-                  </td>
-                </tr>
-                {expanded[s.id] !== undefined && (
-                  <tr key={`${s.id}-detail`}>
-                    <td colSpan={7} style={styles.detailCell}>
-                      {expanded[s.id] ? (
-                        <SessionResults
-                          session={expanded[s.id]!}
-                          onStatusChange={(resultId, status) =>
-                            void updateResultStatus(s.id, resultId, status)
-                          }
-                        />
-                      ) : (
-                        <p style={{ color: "#dc2626" }}>Failed to load session details.</p>
-                      )}
-                    </td>
-                  </tr>
-                )}
-              </>
-            ))}
-          </tbody>
-        </table>
+        <div className="space-y-3">
+          {sessions.map((s) => (
+            <div key={s.id} className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              {/* Session card header */}
+              <div className="flex flex-wrap items-center gap-3 p-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-gray-900 dark:text-white truncate">{s.strategy_name}</span>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${SESSION_STATUS[s.status] ?? ""}`}>
+                      {s.status}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <span className="flex gap-1">
+                      {s.instruments.map((i) => (
+                        <span key={i} className="rounded bg-gray-100 px-1.5 py-0.5 font-mono dark:bg-gray-800">{i}</span>
+                      ))}
+                    </span>
+                    <span>·</span>
+                    <span className="flex gap-1">
+                      {s.timeframes.map((t) => (
+                        <span key={t} className="rounded bg-gray-100 px-1.5 py-0.5 font-mono dark:bg-gray-800">{t}</span>
+                      ))}
+                    </span>
+                    <span>·</span>
+                    <span>{new Date(s.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
+                </div>
+
+                {/* Progress + action */}
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400 dark:text-gray-500">Results</p>
+                    <p className="font-mono text-sm font-semibold text-gray-900 dark:text-white">
+                      {s.validated_results}
+                      <span className="font-normal text-gray-400">/{s.total_results}</span>
+                    </p>
+                  </div>
+                  <div className="w-24">
+                    <div className="h-1.5 rounded-full bg-gray-200 dark:bg-gray-700">
+                      <div
+                        className="h-1.5 rounded-full bg-blue-500 transition-all"
+                        style={{ width: s.total_results > 0 ? `${(s.validated_results / s.total_results) * 100}%` : "0%" }}
+                      />
+                    </div>
+                    <p className="mt-0.5 text-right text-xs text-gray-400">{s.total_results > 0 ? Math.round((s.validated_results / s.total_results) * 100) : 0}% validated</p>
+                  </div>
+                  <button
+                    onClick={() => void toggleExpand(s.id)}
+                    className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    {expanded[s.id] !== undefined ? "Hide ▲" : "Results ▼"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Expanded detail */}
+              {expanded[s.id] !== undefined && (
+                <div className="border-t border-gray-100 dark:border-gray-800">
+                  {expanded[s.id] ? (
+                    <SessionDetail
+                      session={expanded[s.id]!}
+                      onStatusChange={(rId, status) => void updateResultStatus(s.id, rId, status)}
+                    />
+                  ) : (
+                    <p className="p-4 text-sm text-red-500">Failed to load session details.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// SessionResults — inline detail table
+// SessionDetail — strategy explainer + chart + results table
 // ---------------------------------------------------------------------------
 
-interface SessionResultsProps {
+interface SessionDetailProps {
   session: LabSessionDetail;
   onStatusChange: (resultId: string, status: ResultStatus) => void;
 }
 
-function SessionResults({ session, onStatusChange }: SessionResultsProps) {
-  const { constraints, results } = session;
+function SessionDetail({ session, onStatusChange }: SessionDetailProps) {
+  const { results, constraints } = session;
+
+  const chartData = results.map((r) => ({
+    name: `${r.instrument} ${r.timeframe}`,
+    Sharpe: parseFloat(r.metrics.sharpe_ratio.toFixed(3)),
+    "Profit Factor": parseFloat(r.metrics.profit_factor.toFixed(3)),
+  }));
 
   return (
-    <div style={styles.detailBox}>
+    <div className="p-4 space-y-5">
+      {/* Strategy explainer */}
       <StrategyExplainer strategy={session.strategy} />
 
+      {/* Constraints */}
       {constraints && (
-        <p style={styles.constraintsLine}>
-          <strong>Constraints:</strong>{" "}
-          {Object.entries(constraints)
-            .map(([k, v]) => `${k} ≥ ${v}`)
-            .join(" · ")}
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          <span className="font-semibold">Constraints:</span>{" "}
+          {Object.entries(constraints).map(([k, v]) => `${k} ≥ ${v}`).join(" · ")}
         </p>
       )}
 
       {results.length === 0 ? (
-        <p style={{ color: "#6b7280", padding: "0.5rem 0" }}>No results yet.</p>
+        <p className="text-sm text-gray-400">No results yet.</p>
       ) : (
-        <table style={styles.resultsTable}>
-          <thead>
-            <tr>
-              <th style={styles.rth}>Instrument</th>
-              <th style={styles.rth}>TF</th>
-              <th style={styles.rth}>Params</th>
-              <th style={styles.rth}>Sharpe</th>
-              <th style={styles.rth}>Return %</th>
-              <th style={styles.rth}>Max DD %</th>
-              <th style={styles.rth}>Win %</th>
-              <th style={styles.rth}>PF</th>
-              <th style={styles.rth}>Trades</th>
-              <th style={styles.rth}>Status</th>
-              <th style={styles.rth}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((r) => (
-              <tr key={r.id} style={styles.rtr}>
-                <td style={styles.rtd}>{r.instrument}</td>
-                <td style={styles.rtd}>{r.timeframe}</td>
-                <td style={styles.rtd}>
-                  <ParamsCell params={r.params} />
-                </td>
-                <td style={styles.rtd}>{r.metrics.sharpe_ratio.toFixed(2)}</td>
-                <td style={styles.rtd}>{r.metrics.total_return_pct.toFixed(2)}</td>
-                <td style={styles.rtd}>{r.metrics.max_drawdown_pct.toFixed(2)}</td>
-                <td style={styles.rtd}>{r.metrics.win_rate_pct.toFixed(1)}</td>
-                <td style={styles.rtd}>{r.metrics.profit_factor.toFixed(2)}</td>
-                <td style={styles.rtd}>{r.metrics.total_trades}</td>
-                <td style={styles.rtd}>
-                  <span style={resultStatusBadge(r.status)}>{r.status.replace(/_/g, " ")}</span>
-                </td>
-                <td style={styles.rtd}>
-                  <ResultActions
-                    currentStatus={r.status}
-                    onAction={(status) => onStatusChange(r.id, status)}
+        <>
+          {/* Chart */}
+          {chartData.length > 0 && (
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/50">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Performance overview</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={chartData} margin={{ top: 0, right: 16, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(156,163,175,0.2)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "var(--surface-raised)", border: "1px solid var(--surface-border)", borderRadius: 8, fontSize: 12 }}
                   />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="Sharpe" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={48} />
+                  <Bar dataKey="Profit Factor" fill="#8b5cf6" radius={[4, 4, 0, 0]} maxBarSize={48} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Results table */}
+          <div className="overflow-x-auto rounded-lg border border-gray-100 dark:border-gray-800">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900/60">
+                  {["Instrument", "TF", "Params", "Sharpe", "Return %", "Max DD %", "Win %", "PF", "Trades", "Status", "Actions"].map((h) => (
+                    <th key={h} className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                {results.map((r) => (
+                  <tr key={r.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                    <td className="px-3 py-2.5 font-mono font-semibold text-gray-900 dark:text-white">{r.instrument}</td>
+                    <td className="px-3 py-2.5 font-mono text-gray-500 dark:text-gray-400">{r.timeframe}</td>
+                    <td className="px-3 py-2.5"><ParamsCell params={r.params} /></td>
+                    <td className={`px-3 py-2.5 font-mono font-semibold ${sharpeClass(r.metrics.sharpe_ratio)}`}>{r.metrics.sharpe_ratio.toFixed(2)}</td>
+                    <td className={`px-3 py-2.5 font-mono font-semibold ${returnClass(r.metrics.total_return_pct)}`}>{r.metrics.total_return_pct > 0 ? "+" : ""}{r.metrics.total_return_pct.toFixed(1)}%</td>
+                    <td className={`px-3 py-2.5 font-mono font-semibold ${ddClass(r.metrics.max_drawdown_pct)}`}>{r.metrics.max_drawdown_pct.toFixed(1)}%</td>
+                    <td className={`px-3 py-2.5 font-mono ${winClass(r.metrics.win_rate_pct)}`}>{r.metrics.win_rate_pct.toFixed(1)}%</td>
+                    <td className={`px-3 py-2.5 font-mono ${pfClass(r.metrics.profit_factor)}`}>{r.metrics.profit_factor.toFixed(2)}</td>
+                    <td className="px-3 py-2.5 font-mono text-gray-500 dark:text-gray-400">{r.metrics.total_trades}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${RESULT_STATUS[r.status] ?? ""}`}>
+                        {r.status.replace(/_/g, " ")}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <ResultActions currentStatus={r.status} onAction={(s) => onStatusChange(r.id, s)} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// StrategyExplainer — human-readable summary of the strategy logic
+// StrategyExplainer
 // ---------------------------------------------------------------------------
 
 interface StrategyDef {
@@ -222,56 +301,50 @@ interface StrategyDef {
   position_management?: { size?: number; sl_pips?: number | null; tp_pips?: number | null; max_open_trades?: number };
 }
 
-function ruleToText(rule: { indicator: string; condition: string; value?: number; compare_to?: string }): string {
-  const rhs = rule.compare_to !== undefined ? rule.compare_to : String(rule.value ?? "");
-  return `${rule.indicator} ${rule.condition} ${rhs}`;
+function ruleToText(r: { indicator: string; condition: string; value?: number; compare_to?: string }) {
+  return `${r.indicator} ${r.condition} ${r.compare_to ?? r.value ?? ""}`;
 }
 
 function StrategyExplainer({ strategy }: { strategy: unknown }) {
   const s = strategy as StrategyDef | null;
-  if (!s || !s.indicators) return null;
-
+  if (!s?.indicators) return null;
   const pm = s.position_management;
 
   return (
-    <div style={styles.explainerBox}>
-      <p style={styles.explainerTitle}>
-        {s.name ?? "Strategy"}{s.variant ? ` · ${s.variant}` : ""}
+    <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-900/50 dark:bg-blue-950/30">
+      <p className="mb-3 text-sm font-semibold text-blue-800 dark:text-blue-300">
+        {s.name ?? "Strategy"}{s.variant ? <span className="ml-2 font-normal text-blue-500">· {s.variant}</span> : null}
       </p>
-      <div style={styles.explainerGrid}>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
-          <span style={styles.explainerLabel}>Indicators</span>
-          <ul style={styles.explainerList}>
+          <p className="mb-1 text-xs font-bold uppercase tracking-wider text-gray-400">Indicators</p>
+          <ul className="space-y-0.5 text-xs text-gray-700 dark:text-gray-300">
             {s.indicators.map((ind) => {
-              const paramStr = ind.params && Object.keys(ind.params).length > 0
-                ? " (" + Object.entries(ind.params).map(([k, v]) => `${k}=${v}`).join(", ") + ")"
+              const p = ind.params && Object.keys(ind.params).length > 0
+                ? `(${Object.entries(ind.params).map(([k, v]) => `${k}=${v}`).join(", ")})`
                 : "";
-              return <li key={ind.name}><code>{ind.name}</code> = {ind.type}{paramStr}</li>;
+              return <li key={ind.name}><code className="font-mono text-blue-700 dark:text-blue-300">{ind.name}</code> = {ind.type} {p}</li>;
             })}
           </ul>
         </div>
         <div>
-          <span style={styles.explainerLabel}>Entry (ALL must be true)</span>
-          <ul style={styles.explainerList}>
-            {(s.entry_rules ?? []).map((r, i) => (
-              <li key={i}>{ruleToText(r)}</li>
-            ))}
+          <p className="mb-1 text-xs font-bold uppercase tracking-wider text-gray-400">Entry (ALL)</p>
+          <ul className="space-y-0.5 text-xs text-emerald-700 dark:text-emerald-400">
+            {(s.entry_rules ?? []).map((r, i) => <li key={i} className="font-mono">{ruleToText(r)}</li>)}
           </ul>
-          <span style={styles.explainerLabel}>Exit (ANY triggers close)</span>
-          <ul style={styles.explainerList}>
-            {(s.exit_rules ?? []).map((r, i) => (
-              <li key={i}>{ruleToText(r)}</li>
-            ))}
+          <p className="mb-1 mt-2 text-xs font-bold uppercase tracking-wider text-gray-400">Exit (ANY)</p>
+          <ul className="space-y-0.5 text-xs text-red-600 dark:text-red-400">
+            {(s.exit_rules ?? []).map((r, i) => <li key={i} className="font-mono">{ruleToText(r)}</li>)}
           </ul>
         </div>
         {pm && (
           <div>
-            <span style={styles.explainerLabel}>Position</span>
-            <ul style={styles.explainerList}>
-              <li>Size: {((pm.size ?? 0) * 100).toFixed(0)}% of equity</li>
-              {pm.sl_pips != null && <li>SL: {pm.sl_pips} pips</li>}
-              {pm.tp_pips != null && <li>TP: {pm.tp_pips} pips</li>}
-              <li>Max open: {pm.max_open_trades ?? 1}</li>
+            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-gray-400">Position</p>
+            <ul className="space-y-0.5 text-xs text-gray-600 dark:text-gray-400">
+              <li>Size: <span className="font-mono font-semibold">{((pm.size ?? 0) * 100).toFixed(0)}%</span> of equity</li>
+              {pm.sl_pips != null && <li>SL: <span className="font-mono">{pm.sl_pips} pips</span></li>}
+              {pm.tp_pips != null && <li>TP: <span className="font-mono">{pm.tp_pips} pips</span></li>}
+              <li>Max open: <span className="font-mono">{pm.max_open_trades ?? 1}</span></li>
             </ul>
           </div>
         )}
@@ -281,54 +354,50 @@ function StrategyExplainer({ strategy }: { strategy: unknown }) {
 }
 
 // ---------------------------------------------------------------------------
-// ParamsCell — compact display of optimised params (empty → "default")
+// ParamsCell
 // ---------------------------------------------------------------------------
 
 function ParamsCell({ params }: { params: Record<string, unknown> }) {
   const entries = Object.entries(params);
-  if (entries.length === 0) return <span style={{ color: "#9ca3af", fontSize: "0.72rem" }}>default</span>;
+  if (entries.length === 0) return <span className="text-xs text-gray-400 italic">default</span>;
   return (
-    <span style={{ fontSize: "0.72rem", color: "#374151" }}>
+    <span className="font-mono text-xs text-gray-600 dark:text-gray-400">
       {entries.map(([k, v]) => `${k}=${v}`).join(", ")}
     </span>
   );
 }
 
 // ---------------------------------------------------------------------------
-// ResultActions — compact action buttons per result
+// ResultActions
 // ---------------------------------------------------------------------------
 
-interface ResultActionsProps {
-  currentStatus: ResultStatus;
-  onAction: (status: ResultStatus) => void;
-}
+interface ResultActionsProps { currentStatus: ResultStatus; onAction: (s: ResultStatus) => void; }
 
 function ResultActions({ currentStatus, onAction }: ResultActionsProps) {
-  const actions: { label: string; status: ResultStatus; color: string }[] = [];
+  const actions: { label: string; status: ResultStatus; cls: string }[] = [];
 
   if (currentStatus === "pending" || currentStatus === "rejected") {
-    actions.push({ label: "Validate", status: "validated", color: "#2563eb" });
+    actions.push({ label: "Validate", status: "validated", cls: "border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/30" });
     if (currentStatus === "pending") {
-      actions.push({ label: "Reject", status: "rejected", color: "#dc2626" });
+      actions.push({ label: "Reject", status: "rejected", cls: "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/30" });
     }
   }
-
   if (currentStatus === "validated" || currentStatus.startsWith("production")) {
-    actions.push({ label: "→ Std", status: "production_standard", color: "#16a34a" });
-    actions.push({ label: "→ Agg", status: "production_aggressive", color: "#ea580c" });
-    actions.push({ label: "→ Def", status: "production_defensive", color: "#7c3aed" });
+    actions.push({ label: "→ Std", status: "production_standard", cls: "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/30" });
+    actions.push({ label: "→ Agg", status: "production_aggressive", cls: "border-orange-300 text-orange-700 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-900/30" });
+    actions.push({ label: "→ Def", status: "production_defensive", cls: "border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400 dark:hover:bg-purple-900/30" });
     if (currentStatus !== "validated") {
-      actions.push({ label: "Reject", status: "rejected", color: "#dc2626" });
+      actions.push({ label: "Reject", status: "rejected", cls: "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/30" });
     }
   }
 
   return (
-    <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+    <div className="flex flex-wrap gap-1">
       {actions.map((a) => (
         <button
           key={a.status}
           onClick={() => onAction(a.status)}
-          style={{ ...styles.actionBtn, borderColor: a.color, color: a.color }}
+          className={`rounded border px-1.5 py-0.5 text-xs font-medium transition-colors ${a.cls}`}
         >
           {a.label}
         </button>
@@ -338,95 +407,37 @@ function ResultActions({ currentStatus, onAction }: ResultActionsProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Style helpers
+// Empty / Loading / Error states
 // ---------------------------------------------------------------------------
 
-function sessionStatusBadge(status: string): React.CSSProperties {
-  const color = status === "completed" ? "#16a34a" : "#d97706";
-  const bg = status === "completed" ? "#dcfce7" : "#fef3c7";
-  return { ...styles.badge, color, backgroundColor: bg };
+function LoadingState() {
+  return (
+    <div className="flex items-center justify-center py-20 text-gray-400 dark:text-gray-600">
+      <svg className="mr-2 h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+      </svg>
+      Loading sessions…
+    </div>
+  );
 }
 
-function resultStatusBadge(status: ResultStatus): React.CSSProperties {
-  const map: Record<ResultStatus, { color: string; bg: string }> = {
-    pending: { color: "#6b7280", bg: "#f3f4f6" },
-    validated: { color: "#2563eb", bg: "#dbeafe" },
-    rejected: { color: "#dc2626", bg: "#fee2e2" },
-    production_standard: { color: "#16a34a", bg: "#dcfce7" },
-    production_aggressive: { color: "#ea580c", bg: "#ffedd5" },
-    production_defensive: { color: "#7c3aed", bg: "#ede9fe" },
-  };
-  const { color, bg } = map[status] ?? { color: "#6b7280", bg: "#f3f4f6" };
-  return { ...styles.badge, color, backgroundColor: bg };
+function ErrorState({ message }: { message: string }) {
+  return (
+    <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
+      Error: {message}
+    </div>
+  );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const styles: Record<string, React.CSSProperties> = {
-  table: { width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" },
-  th: {
-    textAlign: "left",
-    padding: "0.5rem 0.75rem",
-    borderBottom: "2px solid #e5e7eb",
-    color: "#6b7280",
-    fontWeight: 600,
-    fontSize: "0.8rem",
-    textTransform: "uppercase",
-  },
-  tr: { borderBottom: "1px solid #f3f4f6" },
-  td: { padding: "0.75rem", verticalAlign: "top" },
-  badge: {
-    fontSize: "0.7rem",
-    padding: "2px 6px",
-    borderRadius: "4px",
-    textTransform: "uppercase",
-    fontWeight: 600,
-    whiteSpace: "nowrap",
-  },
-  chips: { fontSize: "0.8rem", color: "#374151" },
-  viewBtn: {
-    padding: "0.25rem 0.75rem",
-    border: "1px solid #d1d5db",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "0.8rem",
-    backgroundColor: "#fff",
-  },
-  detailCell: { padding: "0 0 0.5rem 0", backgroundColor: "#f9fafb" },
-  detailBox: { padding: "1rem 1.5rem" },
-  constraintsLine: { marginBottom: "0.75rem", fontSize: "0.85rem", color: "#374151" },
-  explainerBox: {
-    marginBottom: "1rem",
-    padding: "0.75rem 1rem",
-    backgroundColor: "#f0f9ff",
-    borderRadius: "6px",
-    border: "1px solid #bae6fd",
-  },
-  explainerTitle: { fontWeight: 600, fontSize: "0.85rem", margin: "0 0 0.5rem 0", color: "#0369a1" },
-  explainerGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" },
-  explainerLabel: { fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase" as const, color: "#6b7280", display: "block", marginBottom: "0.2rem" },
-  explainerList: { margin: 0, paddingLeft: "1.2rem", fontSize: "0.78rem", color: "#374151", lineHeight: "1.6" },
-  resultsTable: { width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" },
-  rth: {
-    textAlign: "left",
-    padding: "0.4rem 0.6rem",
-    borderBottom: "1px solid #e5e7eb",
-    color: "#9ca3af",
-    fontWeight: 600,
-    fontSize: "0.72rem",
-    textTransform: "uppercase",
-  },
-  rtr: { borderBottom: "1px solid #f3f4f6" },
-  rtd: { padding: "0.5rem 0.6rem", verticalAlign: "middle" },
-  actionBtn: {
-    padding: "2px 6px",
-    border: "1px solid",
-    borderRadius: "3px",
-    cursor: "pointer",
-    fontSize: "0.7rem",
-    backgroundColor: "#fff",
-    whiteSpace: "nowrap",
-  },
-};
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 py-16 text-center dark:border-gray-800">
+      <p className="text-3xl mb-3">🧪</p>
+      <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No lab sessions yet.</p>
+      <p className="mt-1 text-xs text-gray-400 dark:text-gray-600">
+        Run <code className="font-mono">/strategy-lab &lt;strategy-file&gt;</code> to start.
+      </p>
+    </div>
+  );
+}

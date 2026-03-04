@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { api, type StrategySummary, type StrategyRecord } from "../../api/client.ts";
+import { StrategyPreview } from "../Wizard/StrategyPreview.tsx";
 
 export function StrategiesPage() {
   const [strategies, setStrategies] = useState<StrategySummary[]>([]);
@@ -24,7 +26,6 @@ export function StrategiesPage() {
       });
       return;
     }
-
     try {
       const record = await api.getStrategy(id);
       setExpanded((prev) => ({ ...prev, [id]: record }));
@@ -35,109 +36,139 @@ export function StrategiesPage() {
     }
   }
 
-  if (loading) return <p>Loading strategies…</p>;
-  if (error) return <p style={{ color: "#dc2626" }}>Error: {error}</p>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-gray-400">
+        <svg className="animate-spin w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+        </svg>
+        Loading strategies…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+        <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
+        </svg>
+        Error: {error}
+      </div>
+    );
+  }
 
   return (
     <div>
-      <h1 style={{ marginBottom: "1.5rem" }}>Saved Strategies</h1>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Saved Strategies
+          </h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            {strategies.length > 0
+              ? `${strategies.length} strateg${strategies.length === 1 ? "y" : "ies"} saved`
+              : "No strategies yet"}
+          </p>
+        </div>
+        <Link
+          to="/wizard"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/>
+          </svg>
+          New Strategy
+        </Link>
+      </div>
 
       {strategies.length === 0 ? (
-        <p style={{ color: "#6b7280" }}>
-          No strategies saved yet.{" "}
-          <a href="/wizard" style={{ color: "#2563eb" }}>
-            Create one in the Wizard.
-          </a>
-        </p>
+        <div className="text-center py-20 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+          <div className="text-4xl mb-3">🌱</div>
+          <p className="text-gray-600 dark:text-gray-400 font-medium">No strategies saved yet</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+            Use the{" "}
+            <Link to="/wizard" className="text-blue-600 dark:text-blue-400 hover:underline">
+              Wizard
+            </Link>{" "}
+            to create your first strategy.
+          </p>
+        </div>
       ) : (
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Name</th>
-              <th style={styles.th}>Variant</th>
-              <th style={styles.th}>Created</th>
-              <th style={styles.th}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {strategies.map((s) => (
-              <>
-                <tr key={s.id} style={styles.tr}>
-                  <td style={styles.td}>{s.name}</td>
-                  <td style={styles.td}>
-                    <span style={styles.badge}>{s.variant}</span>
-                  </td>
-                  <td style={styles.td}>{new Date(s.created_at).toLocaleString()}</td>
-                  <td style={styles.td}>
-                    <button onClick={() => void toggleExpand(s.id)} style={styles.viewBtn}>
-                      {expanded[s.id] !== undefined ? "Hide JSON" : "View JSON"}
-                    </button>
-                  </td>
-                </tr>
-                {expanded[s.id] !== undefined && (
-                  <tr key={`${s.id}-detail`}>
-                    <td colSpan={4} style={styles.detailCell}>
-                      {expanded[s.id] ? (
-                        <pre style={styles.json}>
-                          {JSON.stringify(expanded[s.id]!.definition, null, 2)}
-                        </pre>
-                      ) : (
-                        <p style={{ color: "#dc2626" }}>Failed to load JSON.</p>
-                      )}
-                    </td>
-                  </tr>
-                )}
-              </>
-            ))}
-          </tbody>
-        </table>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          {/* Table header */}
+          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-2.5 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Name
+            </span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Variant
+            </span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Created
+            </span>
+            <span />
+          </div>
+
+          {/* Rows */}
+          {strategies.map((s, idx) => (
+            <div
+              key={s.id}
+              className={idx < strategies.length - 1 || expanded[s.id] !== undefined
+                ? "border-b border-gray-200 dark:border-gray-700"
+                : ""}
+            >
+              {/* Main row */}
+              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                  {s.name}
+                </span>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 uppercase tracking-wide whitespace-nowrap">
+                  {s.variant}
+                </span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                  {new Date(s.created_at).toLocaleString()}
+                </span>
+                <button
+                  onClick={() => void toggleExpand(s.id)}
+                  className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors whitespace-nowrap"
+                >
+                  {expanded[s.id] !== undefined ? (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7"/>
+                      </svg>
+                      Hide
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+                      </svg>
+                      Details
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Expanded detail */}
+              {expanded[s.id] !== undefined && (
+                <div className="px-4 pb-4 bg-gray-50/50 dark:bg-gray-800/20">
+                  {expanded[s.id] ? (
+                    <StrategyPreview strategy={expanded[s.id]!.definition} />
+                  ) : (
+                    <p className="text-sm text-red-500 dark:text-red-400 py-2">
+                      Failed to load strategy details.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    fontSize: "0.9rem",
-  },
-  th: {
-    textAlign: "left",
-    padding: "0.5rem 0.75rem",
-    borderBottom: "2px solid #e5e7eb",
-    color: "#6b7280",
-    fontWeight: 600,
-    fontSize: "0.8rem",
-    textTransform: "uppercase",
-  },
-  tr: { borderBottom: "1px solid #f3f4f6" },
-  td: { padding: "0.75rem", verticalAlign: "top" },
-  badge: {
-    fontSize: "0.7rem",
-    padding: "2px 6px",
-    borderRadius: "4px",
-    backgroundColor: "#dbeafe",
-    color: "#1d4ed8",
-    textTransform: "uppercase",
-  },
-  viewBtn: {
-    padding: "0.25rem 0.75rem",
-    border: "1px solid #d1d5db",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "0.8rem",
-    backgroundColor: "#fff",
-  },
-  detailCell: { padding: "0 0.75rem 1rem" },
-  json: {
-    backgroundColor: "#1f2937",
-    color: "#f3f4f6",
-    padding: "1rem",
-    borderRadius: "6px",
-    fontSize: "0.75rem",
-    overflow: "auto",
-    maxHeight: "300px",
-    margin: 0,
-  },
-};
