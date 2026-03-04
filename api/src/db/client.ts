@@ -22,6 +22,15 @@ export function initDb(dbPath: string): Database.Database {
   const schema = readFileSync(join(__dirname, "schema.sql"), "utf-8");
   _db.exec(schema);
 
+  // Idempotent migrations for existing databases
+  const migrations = [
+    `ALTER TABLE strategies ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'draft'`,
+    `ALTER TABLE lab_sessions ADD COLUMN strategy_id TEXT REFERENCES strategies(id) ON DELETE SET NULL`,
+  ];
+  for (const sql of migrations) {
+    try { _db.exec(sql); } catch { /* column already exists */ }
+  }
+
   return _db;
 }
 

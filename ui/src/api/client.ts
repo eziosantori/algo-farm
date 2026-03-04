@@ -25,6 +25,7 @@ export interface StrategySummary {
   id: string;
   name: string;
   variant: string;
+  lifecycle_status: string;
   created_at: string;
 }
 
@@ -53,6 +54,7 @@ export type ResultStatus =
 export interface LabSessionSummary {
   id: string;
   strategy_name: string;
+  strategy_id?: string;
   instruments: string[];
   timeframes: string[];
   status: SessionStatus;
@@ -90,6 +92,7 @@ export interface BacktestResultDetail {
 export interface LabSessionDetail {
   id: string;
   strategy_name: string;
+  strategy_id?: string;
   strategy: unknown;
   instruments: string[];
   timeframes: string[];
@@ -135,6 +138,19 @@ export const api = {
     return request(`/lab/results/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    });
+  },
+
+  createLabSession(payload: {
+    strategy_name: string;
+    strategy_json: string;
+    instruments: string[];
+    timeframes: string[];
+    strategy_id?: string;
+  }): Promise<{ id: string; created_at: string }> {
+    return request("/lab/sessions", {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
   },
 };

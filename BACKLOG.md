@@ -241,6 +241,13 @@ Strategy lifecycle folder structure and Claude Code slash commands for the core 
   → documented in "Additional Notes" section below
 - No multi-timeframe filter (e.g. enter H1 only when D1 SuperTrend is also up); requires engine changes
 
+### M11d — Lab ↔ Strategy Integration ✅
+- `lab_sessions.strategy_id` FK → `strategies.id` (ON DELETE SET NULL)
+- `strategies.lifecycle_status`: draft|optimizing|validated|production_standard|production_aggressive|production_defensive
+- Promoting a Lab result propagates `lifecycle_status` to the linked strategy (atomic transaction)
+- StrategiesPage: "Run in Lab" inline form; `lifecycle_status` badge per row
+- LabPage: "🔗 Linked to strategy" tag on sessions with FK set
+
 ### M9 — Advanced Position Management ⬜ TODO
 > Enables replicating exit logic typical of trend-following strategies (trailing SL, scale-out, time exit).
 > Extends `PositionManagement` and `StrategyComposer` without breaking existing strategies.

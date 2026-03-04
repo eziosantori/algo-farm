@@ -1,13 +1,24 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, type StrategySummary, type StrategyRecord } from "../../api/client.ts";
 import { StrategyPreview } from "../Wizard/StrategyPreview.tsx";
 
+function lifecycleBadgeClass(status: string): string {
+  if (status === "validated") return "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400";
+  if (status.startsWith("production")) return "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300";
+  if (status === "optimizing") return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+}
+
 export function StrategiesPage() {
+  const navigate = useNavigate();
   const [strategies, setStrategies] = useState<StrategySummary[]>([]);
   const [expanded, setExpanded] = useState<Record<string, StrategyRecord | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [labRow, setLabRow] = useState<string | null>(null);
+  const [labInstruments, setLabInstruments] = useState("");
+  const [labTimeframes, setLabTimeframes] = useState("");
 
   useEffect(() => {
     api
@@ -33,6 +44,34 @@ export function StrategiesPage() {
       const msg = e instanceof Error ? e.message : "Error loading strategy";
       setExpanded((prev) => ({ ...prev, [id]: null }));
       console.error(msg);
+    }
+  }
+
+  async function launchLab(s: StrategySummary) {
+    let record = expanded[s.id];
+    if (record === undefined) {
+      try {
+        record = await api.getStrategy(s.id);
+        setExpanded((prev) => ({ ...prev, [s.id]: record }));
+      } catch {
+        return;
+      }
+    }
+    if (!record) return;
+    const instruments = labInstruments.split(",").map((x) => x.trim()).filter(Boolean);
+    const timeframes = labTimeframes.split(",").map((x) => x.trim()).filter(Boolean);
+    if (instruments.length === 0 || timeframes.length === 0) return;
+    try {
+      await api.createLabSession({
+        strategy_id: s.id,
+        strategy_name: s.name,
+        strategy_json: JSON.stringify(record.definition),
+        instruments,
+        timeframes,
+      });
+      navigate("/lab");
+    } catch (e: unknown) {
+      console.error(e);
     }
   }
 
@@ -99,9 +138,12 @@ export function StrategiesPage() {
       ) : (
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           {/* Table header */}
-          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-2.5 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700">
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-4 px-4 py-2.5 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700">
             <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Name
+            </span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Lifecycle
             </span>
             <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Variant
@@ -109,6 +151,7 @@ export function StrategiesPage() {
             <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Created
             </span>
+            <span />
             <span />
           </div>
 
@@ -121,9 +164,12 @@ export function StrategiesPage() {
                 : ""}
             >
               {/* Main row */}
-              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+              <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-4 items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
                 <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                   {s.name}
+                </span>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full uppercase tracking-wide whitespace-nowrap ${lifecycleBadgeClass(s.lifecycle_status)}`}>
+                  {s.lifecycle_status}
                 </span>
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 uppercase tracking-wide whitespace-nowrap">
                   {s.variant}
@@ -131,6 +177,17 @@ export function StrategiesPage() {
                 <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
                   {new Date(s.created_at).toLocaleString()}
                 </span>
+                <button
+                  onClick={() => {
+                    if (labRow === s.id) { setLabRow(null); } else {
+                      setLabInstruments(""); setLabTimeframes(""); setLabRow(s.id);
+                      if (expanded[s.id] === undefined) { void api.getStrategy(s.id).then((r) => setExpanded((prev) => ({ ...prev, [s.id]: r }))).catch(() => {}); }
+                    }
+                  }}
+                  className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors whitespace-nowrap"
+                >
+                  ▶ Lab
+                </button>
                 <button
                   onClick={() => void toggleExpand(s.id)}
                   className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors whitespace-nowrap"
@@ -152,6 +209,40 @@ export function StrategiesPage() {
                   )}
                 </button>
               </div>
+
+              {/* Inline Lab form */}
+              {labRow === s.id && (
+                <div className="px-4 py-3 bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-100 dark:border-blue-900/40">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <input
+                      type="text"
+                      placeholder="Instruments (e.g. EURUSD,XAUUSD)"
+                      value={labInstruments}
+                      onChange={(e) => setLabInstruments(e.target.value)}
+                      className="text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-56"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Timeframes (e.g. H1,M15)"
+                      value={labTimeframes}
+                      onChange={(e) => setLabTimeframes(e.target.value)}
+                      className="text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-44"
+                    />
+                    <button
+                      onClick={() => void launchLab(s)}
+                      className="px-3 py-1 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 transition-colors"
+                    >
+                      Launch
+                    </button>
+                    <button
+                      onClick={() => setLabRow(null)}
+                      className="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Expanded detail */}
               {expanded[s.id] !== undefined && (

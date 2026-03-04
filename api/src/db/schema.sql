@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS strategies (
   variant TEXT NOT NULL,
   definition_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  lifecycle_status TEXT NOT NULL DEFAULT 'draft'
 );
 
 CREATE TABLE IF NOT EXISTS error_log (
@@ -24,7 +25,8 @@ CREATE TABLE IF NOT EXISTS lab_sessions (
   constraints TEXT,
   status TEXT NOT NULL DEFAULT 'running',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  strategy_id TEXT REFERENCES strategies(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS backtest_results (

@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import type Database from "better-sqlite3";
+import type { LifecycleStatus } from "./strategy.repo.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,6 +26,7 @@ export interface LabSessionRow {
   status: SessionStatus;
   created_at: string;
   updated_at: string;
+  strategy_id?: string | null;
 }
 
 export interface BacktestResultRow {
@@ -62,6 +64,7 @@ export interface LabSessionSummary {
   validated_results: number;
   created_at: string;
   updated_at: string;
+  strategy_id?: string | null;
 }
 
 export interface LabSessionDetail {
@@ -75,6 +78,7 @@ export interface LabSessionDetail {
   results: BacktestResultDetail[];
   created_at: string;
   updated_at: string;
+  strategy_id?: string | null;
 }
 
 export interface BacktestResultDetail {
@@ -103,6 +107,7 @@ export class LabRepository {
     instruments: string[];
     timeframes: string[];
     constraints?: Record<string, number> | null;
+    strategy_id?: string;
   }): { id: string; created_at: string } {
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -110,8 +115,8 @@ export class LabRepository {
     this.db
       .prepare(
         `INSERT INTO lab_sessions
-           (id, strategy_name, strategy_json, instruments, timeframes, constraints, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)`
+           (id, strategy_name, strategy_json, instruments, timeframes, constraints, status, created_at, updated_at, strategy_id)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
       )
       .run(
         id,
@@ -121,7 +126,8 @@ export class LabRepository {
         JSON.stringify(data.timeframes),
         data.constraints ? JSON.stringify(data.constraints) : null,
         now,
-        now
+        now,
+        data.strategy_id ?? null
       );
 
     return { id, created_at: now };
@@ -132,7 +138,7 @@ export class LabRepository {
       .prepare(
         `SELECT
            s.id, s.strategy_name, s.instruments, s.timeframes, s.status,
-           s.created_at, s.updated_at,
+           s.created_at, s.updated_at, s.strategy_id,
            COUNT(r.id) AS total_results,
            SUM(CASE WHEN r.status NOT IN ('pending','rejected') THEN 1 ELSE 0 END) AS validated_results
          FROM lab_sessions s
@@ -152,6 +158,7 @@ export class LabRepository {
       validated_results: r.validated_results,
       created_at: r.created_at,
       updated_at: r.updated_at,
+      strategy_id: r.strategy_id ?? null,
     }));
   }
 
@@ -180,6 +187,7 @@ export class LabRepository {
       results: resultRows.map(parseResultRow),
       created_at: row.created_at,
       updated_at: row.updated_at,
+      strategy_id: row.strategy_id ?? null,
     };
   }
 
@@ -228,17 +236,45 @@ export class LabRepository {
   }
 
   updateResultStatus(id: string, status: ResultStatus): BacktestResultDetail | null {
-    const result = this.db
-      .prepare(`UPDATE backtest_results SET status = ? WHERE id = ?`)
-      .run(status, id);
+    const lifecycleStatuses: Set<string> = new Set([
+      "validated",
+      "production_standard",
+      "production_aggressive",
+      "production_defensive",
+    ]);
 
-    if (result.changes === 0) return null;
+    const txn = this.db.transaction(() => {
+      const result = this.db
+        .prepare(`UPDATE backtest_results SET status = ? WHERE id = ?`)
+        .run(status, id);
 
-    const row = this.db
-      .prepare(`SELECT * FROM backtest_results WHERE id = ?`)
-      .get(id) as BacktestResultRow;
+      if (result.changes === 0) return null;
 
-    return parseResultRow(row);
+      if (lifecycleStatuses.has(status)) {
+        const link = this.db
+          .prepare(
+            `SELECT s.strategy_id FROM lab_sessions s
+             JOIN backtest_results r ON r.session_id = s.id
+             WHERE r.id = ?`
+          )
+          .get(id) as { strategy_id: string | null } | undefined;
+
+        if (link?.strategy_id) {
+          const now = new Date().toISOString();
+          this.db
+            .prepare(`UPDATE strategies SET lifecycle_status = ?, updated_at = ? WHERE id = ?`)
+            .run(status as LifecycleStatus, now, link.strategy_id);
+        }
+      }
+
+      const row = this.db
+        .prepare(`SELECT * FROM backtest_results WHERE id = ?`)
+        .get(id) as BacktestResultRow;
+
+      return parseResultRow(row);
+    });
+
+    return txn();
   }
 }
 

@@ -2,6 +2,8 @@ import { randomUUID } from "crypto";
 import type Database from "better-sqlite3";
 import { StrategyDefinition } from "@algo-farm/shared/strategy";
 
+export type LifecycleStatus = "draft" | "optimizing" | "validated" | "production_standard" | "production_aggressive" | "production_defensive";
+
 export interface StrategyRow {
   id: string;
   name: string;
@@ -9,12 +11,14 @@ export interface StrategyRow {
   definition_json: string;
   created_at: string;
   updated_at: string;
+  lifecycle_status: LifecycleStatus;
 }
 
 export interface StrategySummary {
   id: string;
   name: string;
   variant: string;
+  lifecycle_status: LifecycleStatus;
   created_at: string;
 }
 
@@ -45,7 +49,7 @@ export class StrategyRepository {
   list(): StrategySummary[] {
     const rows = this.db
       .prepare(
-        `SELECT id, name, variant, created_at FROM strategies ORDER BY created_at DESC, rowid DESC`
+        `SELECT id, name, variant, lifecycle_status, created_at FROM strategies ORDER BY created_at DESC, rowid DESC`
       )
       .all() as StrategySummary[];
 
@@ -77,6 +81,14 @@ export class StrategyRepository {
       )
       .run(definition.name, definition.variant, JSON.stringify(definition), now, id);
 
+    return result.changes > 0;
+  }
+
+  updateLifecycleStatus(id: string, status: LifecycleStatus): boolean {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(`UPDATE strategies SET lifecycle_status = ?, updated_at = ? WHERE id = ?`)
+      .run(status, now, id);
     return result.changes > 0;
   }
 

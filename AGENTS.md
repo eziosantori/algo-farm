@@ -9,8 +9,7 @@
 
 An **algo trading strategy development platform**. Users describe a trading idea in natural language; the platform converts it to a structured strategy definition, runs backtests and optimizations autonomously, validates robustness statistically, and exports the result to cTrader or TradingView Pine Script.
 
-**Current focus: Phase 1 — Standalone Python Engine.**
-Nothing else exists yet. Build the Python CLI engine first. No Node.js, no Redis, no UI. See `docs/PLAN.md §4 Phase 1` for the full spec.
+**Current status:** Phase 1 (Python Engine) and Phase 2 (Strategy Wizard + Lab) are complete. Current work is Phase 3 planning (Node.js API + BullMQ + Dashboard).
 
 ---
 
@@ -35,6 +34,20 @@ Phase 2+ (later)
 | **Python engine** | Backtest, optimization, metrics, robustness, SQLite writes | Serve HTTP, call external APIs, depend on Node/Redis |
 | **Node.js API** | Job orchestration, LLM calls, WebSocket, SQLite reads via repos | Run long compute, store state in memory |
 | **React UI** | Rendering, client validation, WebSocket subscribe | Call Python directly, write to SQLite |
+
+## Strategy lifecycle
+
+```
+[Wizard] → strategies (DB, lifecycle_status=draft)
+              │
+              ▼ "Run in Lab" (StrategiesPage → POST /lab/sessions)
+         lab_sessions (strategy_id FK)
+              │
+              ▼ promote result (PATCH /lab/results/:id/status)
+         strategies.lifecycle_status updated automatically (atomic transaction)
+              │
+         draft → optimizing → validated → production_standard / production_aggressive / production_defensive
+```
 
 ---
 

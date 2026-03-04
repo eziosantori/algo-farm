@@ -123,6 +123,9 @@ export function LabPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-gray-900 dark:text-white truncate">{s.strategy_name}</span>
+                    {s.strategy_id && (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">🔗 Linked to strategy</span>
+                    )}
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${SESSION_STATUS[s.status] ?? ""}`}>
                       {s.status}
                     </span>

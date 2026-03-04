@@ -20,6 +20,7 @@ const CreateSessionSchema = z.object({
   instruments: z.array(z.string().min(1)).min(1),
   timeframes: z.array(z.string().min(1)).min(1),
   constraints: z.record(z.number()).nullable().optional(),
+  strategy_id: z.string().uuid().optional(),
 });
 
 const AddResultSchema = z.object({
