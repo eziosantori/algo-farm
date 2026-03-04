@@ -22,6 +22,8 @@ class IndicatorDef(BaseModel):
         "cci",
         "obv",
         "williamsr",
+        "supertrend",
+        "supertrend_direction",
     ]
     params: dict[str, Any]
 

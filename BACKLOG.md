@@ -75,10 +75,8 @@ Discovered during first-agent onboarding test (trend-following strategy simulati
   the grid applies the same swept value to ALL of them. Multi-indicator strategies with different
   periods must be iterated manually (agent feedback loop) rather than via `--param-grid`.
   → To fix in Phase 3: named param namespacing (e.g. `"fast_sma.period"`, `"slow_sma.period"`).
-- **ATR/ADX use only Close**: `StrategyComposer` passes only `data.Close` to all indicators via
-  `self_bt.I(fn, data.Close, ...)`. ATR and ADX accept optional `high`/`low` but receive `close`
-  for all three, reducing accuracy. Real H/L data is available in the Parquet files.
-  → To fix in Phase 3: pass `data.High`, `data.Low` to indicators that declare those parameters.
+- ~~**ATR/ADX use only Close**~~: **Fixed in M8.** `StrategyComposer` now passes real `data.High`
+  and `data.Low` to any indicator whose signature declares those parameters.
 - **No automated feedback loop**: the agent iteration loop described in `AGENTS.md` is manual
   at Phase 1 (read JSONL → edit JSON → re-run). The automated loop (BullMQ + WebSocket + LLM
   refinement) is Phase 3 scope.
@@ -172,20 +170,21 @@ Strategy lifecycle folder structure and Claude Code slash commands for the core 
 - [ ] M5 — React Dashboard: equity curve, drawdown, heatmap, live progress
 - [ ] M6 — Integration test: job submit via API → completion → results in SQLite
 
-### M8 — SuperTrend Indicator ⬜ TODO
+### M8 — SuperTrend Indicator ✅
 > Required to replicate trend-following strategies with dynamic trailing SL (e.g. cTrader Bot2).
 
-- [ ] Implement `supertrend` in `engine/src/backtest/indicators/trend.py`
-  - Formula: ATR-based bands (upper = `(H+L)/2 + mult×ATR`, lower = `(H+L)/2 - mult×ATR`)
-  - Primary output: single series with the active ST line value per bar
-  - Secondary output: `direction` series (`+1` = uptrend, `-1` = downtrend)
-  - Params: `period` (default 10), `multiplier` (default 3.0)
-- [ ] Register `"supertrend"` in `IndicatorRegistry`
-- [ ] Add `"supertrend"` to the Literal in `models.py` and the Zod enum in `shared/src/strategy.ts`
-- [ ] Update `StrategyComposer` to pass `High` and `Low` to indicators that declare those params
-  (also fixes the known ATR/ADX close-only limitation)
-- [ ] Tests: `tests/unit/test_indicators.py` — direction flip, band value, warmup period
-- [ ] Fixture: `tests/fixtures/supertrend_rsi_strategy.json` — baseline strategy with SuperTrend + RSI + EMA
+- [x] Implement `supertrend` + `supertrend_direction` in `engine/src/backtest/indicators/trend.py`
+  - Formula: ATR-based bands (`(H+L)/2 ± mult×ATR`) with bar-by-bar flip logic
+  - `supertrend`: returns the active ST line value per bar
+  - `supertrend_direction`: returns `+1.0` (uptrend) / `-1.0` (downtrend) per bar
+  - Params: `period` (default 10), `multiplier` (default 3.0); fallback to Close when H/L absent
+- [x] Both registered in `IndicatorRegistry` (`"supertrend"`, `"supertrend_direction"`)
+- [x] Added to `IndicatorDef.type` Literal in `models.py` and `IndicatorTypeSchema` in `shared/src/strategy.ts`
+- [x] `StrategyComposer` now passes real `data.High` / `data.Low` to any indicator declaring those params
+  (also fixes the known ATR/ADX close-only limitation — resolved here)
+- [x] 6 new tests in `tests/unit/test_indicators.py`: length, warmup, direction values, flip, registry (×2)
+- [x] Fixture: `tests/fixtures/supertrend_rsi_strategy.json` — SuperTrend direction + RSI entry/exit
+- [x] **61/61 tests passing, 92% coverage** — end-to-end smoke test clean
 
 ### M9 — Advanced Position Management ⬜ TODO
 > Enables replicating exit logic typical of trend-following strategies (trailing SL, scale-out, time exit).

@@ -13,6 +13,8 @@ export const IndicatorTypeSchema = z.enum([
   "cci",
   "obv",
   "williamsr",
+  "supertrend",
+  "supertrend_direction",
 ]);
 
 export type IndicatorType = z.infer<typeof IndicatorTypeSchema>;

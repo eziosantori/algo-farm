@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from src.backtest.indicators import IndicatorRegistry
-from src.backtest.indicators.trend import ema, macd, sma
+from src.backtest.indicators.trend import ema, macd, sma, supertrend, supertrend_direction
 from src.backtest.indicators.momentum import cci, obv, rsi, stoch, williamsr
 from src.backtest.indicators.volatility import adx, atr, bollinger_bands
 
@@ -149,10 +149,68 @@ def test_adx_range() -> None:
     assert np.all(valid >= 0) and np.all(valid <= 100)
 
 
+# --- SuperTrend ---
+
+def test_supertrend_length() -> None:
+    rng = np.random.default_rng(10)
+    close = 1.0 + np.cumsum(rng.normal(0, 0.01, 100))
+    result = supertrend(close, period=10, multiplier=3.0)
+    assert len(result) == len(close)
+
+
+def test_supertrend_warmup() -> None:
+    rng = np.random.default_rng(11)
+    close = 1.0 + np.cumsum(rng.normal(0, 0.01, 100))
+    period = 10
+    result = supertrend(close, period=period, multiplier=3.0)
+    # Bars before first valid ATR bar must be NaN
+    assert np.all(np.isnan(result[: period - 1]))
+    # By period * 2 - 1 the value must be valid
+    assert not np.isnan(result[period * 2 - 1])
+
+
+def test_supertrend_direction_values() -> None:
+    rng = np.random.default_rng(12)
+    close = 1.0 + np.cumsum(rng.normal(0, 0.01, 100))
+    direction = supertrend_direction(close, period=10, multiplier=3.0)
+    valid = direction[~np.isnan(direction)]
+    assert set(valid.tolist()).issubset({1.0, -1.0}), f"Unexpected direction values: {set(valid.tolist())}"
+
+
+def test_supertrend_direction_flip() -> None:
+    # Declining phase followed by sharp rise — direction must flip from -1 to +1
+    close = np.concatenate([
+        np.linspace(2.0, 1.0, 30),   # downtrend
+        np.linspace(1.0, 5.0, 30),   # sharp uptrend
+    ])
+    high = close + 0.01
+    low = close - 0.01
+    direction = supertrend_direction(close, high, low, period=5, multiplier=2.0)
+    valid = direction[~np.isnan(direction)]
+    assert -1.0 in valid, "Expected downtrend phase"
+    assert 1.0 in valid, "Expected uptrend phase after flip"
+    # After the sharp rise the last bar must be in an uptrend
+    assert direction[-1] == 1.0, "Expected uptrend at end of sharp rise"
+
+
+def test_supertrend_registered() -> None:
+    fn = IndicatorRegistry.get("supertrend")
+    assert callable(fn)
+
+
+def test_supertrend_direction_registered() -> None:
+    fn = IndicatorRegistry.get("supertrend_direction")
+    assert callable(fn)
+
+
 # --- Registry completeness ---
 
 def test_all_required_indicators_registered() -> None:
-    required = {"sma", "ema", "macd", "rsi", "stoch", "atr", "bollinger_bands", "momentum", "adx", "cci", "obv", "williamsr"}
+    required = {
+        "sma", "ema", "macd", "rsi", "stoch", "atr", "bollinger_bands",
+        "momentum", "adx", "cci", "obv", "williamsr",
+        "supertrend", "supertrend_direction",
+    }
     registered = set(IndicatorRegistry.list_all())
     # momentum is listed in the plan but maps to an alias — accept missing for now
     missing = required - registered - {"momentum"}

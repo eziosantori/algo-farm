@@ -26,9 +26,20 @@ class StrategyComposer:
             for ind_def in definition.indicators:
                 fn = registry.get(ind_def.type)
                 merged = {**ind_def.params, **params}
+                fn_param_names = _get_fn_params(fn)
                 # Extract period/params relevant for this indicator
-                ind_params = {k: v for k, v in merged.items() if k in _get_fn_params(fn)}
-                indicator = self_bt.I(fn, self_bt.data.Close, **ind_params)  # type: ignore[attr-defined]
+                ind_params = {k: v for k, v in merged.items() if k in fn_param_names}
+                # Pass real High/Low to indicators that declare those parameters
+                if "high" in fn_param_names and "low" in fn_param_names:
+                    indicator = self_bt.I(  # type: ignore[attr-defined]
+                        fn,
+                        self_bt.data.Close,
+                        self_bt.data.High,
+                        self_bt.data.Low,
+                        **ind_params,
+                    )
+                else:
+                    indicator = self_bt.I(fn, self_bt.data.Close, **ind_params)  # type: ignore[attr-defined]
                 setattr(self_bt, ind_def.name, indicator)
 
         def next(self_bt: Strategy) -> None:  # type: ignore[type-arg]

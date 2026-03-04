@@ -1,4 +1,4 @@
-"""Trend indicators: sma, ema, macd."""
+"""Trend indicators: sma, ema, macd, supertrend."""
 from __future__ import annotations
 
 import numpy as np
@@ -41,3 +41,108 @@ def macd(
     fast = ema(close, fast_period)
     slow = ema(close, slow_period)
     return fast - slow
+
+
+def _compute_supertrend(
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    period: int,
+    multiplier: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Core SuperTrend algorithm. Returns (st_line, direction) arrays.
+
+    direction: +1.0 = uptrend, -1.0 = downtrend, NaN = warmup.
+    """
+    from src.backtest.indicators.volatility import atr as _atr  # lazy to avoid circular import
+
+    close = np.asarray(close, dtype=float)
+    high = np.asarray(high, dtype=float)
+    low = np.asarray(low, dtype=float)
+    n = len(close)
+
+    st_line = np.full(n, np.nan, dtype=float)
+    direction = np.full(n, np.nan, dtype=float)
+
+    start = period - 1
+    if start >= n:
+        return st_line, direction
+
+    atr_vals = _atr(close, high, low, period)
+    hl2 = (high + low) / 2.0
+    basic_upper = hl2 + multiplier * atr_vals
+    basic_lower = hl2 - multiplier * atr_vals
+
+    final_upper = np.full(n, np.nan, dtype=float)
+    final_lower = np.full(n, np.nan, dtype=float)
+
+    # Initialise at first valid ATR bar
+    final_upper[start] = basic_upper[start]
+    final_lower[start] = basic_lower[start]
+    direction[start] = -1.0
+    st_line[start] = final_upper[start]
+
+    for i in range(start + 1, n):
+        # Update final bands
+        if basic_upper[i] < final_upper[i - 1] or close[i - 1] > final_upper[i - 1]:
+            final_upper[i] = basic_upper[i]
+        else:
+            final_upper[i] = final_upper[i - 1]
+
+        if basic_lower[i] > final_lower[i - 1] or close[i - 1] < final_lower[i - 1]:
+            final_lower[i] = basic_lower[i]
+        else:
+            final_lower[i] = final_lower[i - 1]
+
+        # Determine direction and SuperTrend line
+        prev_dir = direction[i - 1]
+        if prev_dir == -1.0:
+            if close[i] > final_upper[i]:
+                direction[i] = 1.0
+                st_line[i] = final_lower[i]
+            else:
+                direction[i] = -1.0
+                st_line[i] = final_upper[i]
+        else:
+            if close[i] < final_lower[i]:
+                direction[i] = -1.0
+                st_line[i] = final_upper[i]
+            else:
+                direction[i] = 1.0
+                st_line[i] = final_lower[i]
+
+    return st_line, direction
+
+
+@IndicatorRegistry.register("supertrend")
+def supertrend(
+    close: np.ndarray,
+    high: np.ndarray | None = None,
+    low: np.ndarray | None = None,
+    period: int = 10,
+    multiplier: float = 3.0,
+) -> np.ndarray:
+    """SuperTrend line value. Gracefully falls back to close when high/low are absent."""
+    if high is None:
+        high = close
+    if low is None:
+        low = close
+    st_line, _ = _compute_supertrend(close, high, low, period, multiplier)
+    return st_line
+
+
+@IndicatorRegistry.register("supertrend_direction")
+def supertrend_direction(
+    close: np.ndarray,
+    high: np.ndarray | None = None,
+    low: np.ndarray | None = None,
+    period: int = 10,
+    multiplier: float = 3.0,
+) -> np.ndarray:
+    """SuperTrend direction: +1.0 uptrend, -1.0 downtrend. Use in entry/exit rules."""
+    if high is None:
+        high = close
+    if low is None:
+        low = close
+    _, direction = _compute_supertrend(close, high, low, period, multiplier)
+    return direction
