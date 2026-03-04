@@ -37,6 +37,69 @@ export interface StrategyRecord {
 
 export type ProviderId = "claude" | "gemini" | "openrouter";
 
+// ---------------------------------------------------------------------------
+// Lab types
+// ---------------------------------------------------------------------------
+
+export type SessionStatus = "running" | "completed";
+export type ResultStatus =
+  | "pending"
+  | "validated"
+  | "rejected"
+  | "production_standard"
+  | "production_aggressive"
+  | "production_defensive";
+
+export interface LabSessionSummary {
+  id: string;
+  strategy_name: string;
+  instruments: string[];
+  timeframes: string[];
+  status: SessionStatus;
+  total_results: number;
+  validated_results: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BacktestMetrics {
+  total_return_pct: number;
+  sharpe_ratio: number;
+  sortino_ratio: number;
+  calmar_ratio: number;
+  max_drawdown_pct: number;
+  win_rate_pct: number;
+  profit_factor: number;
+  total_trades: number;
+  avg_trade_duration_bars: number;
+  cagr_pct: number;
+  expectancy: number;
+}
+
+export interface BacktestResultDetail {
+  id: string;
+  session_id: string;
+  instrument: string;
+  timeframe: string;
+  params: Record<string, unknown>;
+  metrics: BacktestMetrics;
+  status: ResultStatus;
+  created_at: string;
+}
+
+export interface LabSessionDetail {
+  id: string;
+  strategy_name: string;
+  strategy: unknown;
+  instruments: string[];
+  timeframes: string[];
+  constraints: Record<string, number> | null;
+  status: SessionStatus;
+  results: BacktestResultDetail[];
+  created_at: string;
+  updated_at: string;
+}
+
 export const api = {
   wizardChat(message: string, provider: ProviderId = "gemini"): Promise<WizardChatResponse> {
     return request("/wizard/chat", {
@@ -58,5 +121,20 @@ export const api = {
 
   getStrategy(id: string): Promise<StrategyRecord> {
     return request(`/strategies/${id}`);
+  },
+
+  listLabSessions(): Promise<{ sessions: LabSessionSummary[] }> {
+    return request("/lab/sessions");
+  },
+
+  getLabSession(id: string): Promise<LabSessionDetail> {
+    return request(`/lab/sessions/${id}`);
+  },
+
+  updateLabResultStatus(id: string, status: ResultStatus): Promise<BacktestResultDetail> {
+    return request(`/lab/results/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
   },
 };

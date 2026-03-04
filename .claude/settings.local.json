@@ -11,7 +11,9 @@
       "Bash(touch engine/strategies/*)",
       "WebSearch",
       "WebFetch(domain:pypi.org)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:dukascopy-node.app)",
+      "Bash(source:*)"
     ]
   }
 }

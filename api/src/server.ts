@@ -6,6 +6,7 @@ import { initDb } from "./db/client.js";
 import healthRouter from "./routes/health.js";
 import strategiesRouter from "./routes/strategies.js";
 import wizardRouter from "./routes/wizard.js";
+import labRouter from "./routes/lab.js";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 const DB_PATH = process.env.DB_PATH ?? "./algo_farm.db";
@@ -19,6 +20,7 @@ export function createApp(): express.Application {
   app.use(healthRouter);
   app.use(strategiesRouter);
   app.use(wizardRouter);
+  app.use(labRouter);
 
   return app;
 }

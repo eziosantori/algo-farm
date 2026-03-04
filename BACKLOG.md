@@ -196,12 +196,50 @@ Strategy lifecycle folder structure and Claude Code slash commands for the core 
 - [x] `engine/download.py` — CLI: `--instruments`, `--timeframes`, `--from`, `--to`, `--data-dir`,
   `--force`, `--list-instruments`; summary table on completion
 - [x] Uses `npx dukascopy-node` subprocess (mirrors cbot-farm) — supports ALL asset classes
-- [x] **24 instruments**: forex majors/crosses, Gold, Silver, Brent, WTI, NatGas, Copper + 6 equity indices
+- [x] **34 instruments**: forex majors/crosses, Gold, Silver, Brent, WTI, NatGas, Copper + 6 equity indices + 10 NASDAQ stocks (AAPL, MSFT, NVDA, AMZN, TSLA, META, GOOGL, NFLX, AMD, QCOM)
 - [x] Equity indices confirmed working: US500 (S&P 500), GER40 (DAX), NAS100, UK100, JPN225, AUS200
 - [x] **61/61 tests passing** — end-to-end confirmed: download → backtest on 3 instruments × 2 timeframes
 
 **Supported timeframes:** M1, M5, M10, M15, M30, H1, H4, D1, W1
 **Prerequisites:** Node.js / npx in PATH (dukascopy-node pulled automatically via npx)
+
+### M11 — Strategy Lab (Multi-asset × Multi-timeframe UI + Skill) ✅
+> Enables running a strategy across multiple assets and timeframes, storing results in the Lab,
+> reviewing them in the UI, and promoting the best configurations to production.
+
+- [x] `api/src/db/schema.sql` — two new tables: `lab_sessions` (session metadata + constraints) and
+  `backtest_results` (per-combination metrics, FK cascade on session delete)
+- [x] `api/src/db/repositories/lab.repo.ts` — `LabRepository`: `createSession`, `listSessions`
+  (with aggregated counts), `getSession` (results sorted by Sharpe via `json_extract`),
+  `updateSessionStatus`, `addResult`, `updateResultStatus`
+- [x] `api/src/routes/lab.ts` — 6 endpoints with Zod validation:
+  `POST /lab/sessions`, `GET /lab/sessions`, `GET /lab/sessions/:id`,
+  `PATCH /lab/sessions/:id/status`, `POST /lab/sessions/:id/results`, `PATCH /lab/results/:id/status`
+- [x] `api/src/server.ts` — registered `labRouter`
+- [x] `api/tests/unit/lab.repo.test.ts` — 13 unit tests on in-memory SQLite
+- [x] `api/tests/integration/lab.routes.test.ts` — 13 integration tests (supertest)
+- [x] **50/50 API tests passing**
+- [x] `ui/src/api/client.ts` — added Lab types and `listLabSessions`, `getLabSession`, `updateLabResultStatus`
+- [x] `ui/src/components/Lab/LabPage.tsx` — sessions list with inline result expansion;
+  result table sorted by Sharpe with params column; per-result status actions (validate/reject/promote);
+  `StrategyExplainer` component (indicators, entry/exit rules, position management) parsed from `strategy_json`
+- [x] `ui/src/App.tsx` — added `/lab` route and "Lab" nav link
+- [x] `.claude/commands/strategy-lab.md` — `/strategy-lab` skill: autonomous improvement loop —
+  baseline run → LLM diagnoses weaknesses → proposes structural changes (indicators/filters/rules) →
+  tests all instrument × timeframe combos → keeps improvements (+2% threshold) → stores all in Lab →
+  human validation only at the end
+- [x] Engine: `runner.py` auto-scales `initial_cash` based on instrument price (fixes 0-trade bug on BTCUSD/gold)
+- [x] Engine: `downloader.py` saves timezone-naive DatetimeIndex (fixes backtesting.py compatibility)
+- [x] Instruments: added 33 crypto pairs (BTCUSD, ETHUSD, LTCUSD, ADAUSD, XLMUSD …)
+
+**Result status lifecycle:** `pending → validated | rejected | production_standard | production_aggressive | production_defensive`
+
+**Known gaps / next steps for Lab:**
+- `/strategy-lab` runs single-param simulations only; grid search per (instrument × timeframe) not yet integrated
+  → M12: add `--param-grid` to `/strategy-lab`, store `best_params` per result combination
+- Long-only strategy; short selling requires bi-directional `entry_rules_long`/`entry_rules_short` schema
+  → documented in "Additional Notes" section below
+- No multi-timeframe filter (e.g. enter H1 only when D1 SuperTrend is also up); requires engine changes
 
 ### M9 — Advanced Position Management ⬜ TODO
 > Enables replicating exit logic typical of trend-following strategies (trailing SL, scale-out, time exit).

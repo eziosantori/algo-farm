@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { WizardPage } from "./components/Wizard/WizardPage.tsx";
 import { StrategiesPage } from "./components/Strategies/StrategiesPage.tsx";
+import { LabPage } from "./components/Lab/LabPage.tsx";
 
 export function App() {
   return (
@@ -13,6 +14,9 @@ export function App() {
         <NavLink to="/strategies" style={navLinkStyle}>
           Strategies
         </NavLink>
+        <NavLink to="/lab" style={navLinkStyle}>
+          Lab
+        </NavLink>
       </nav>
 
       <main style={styles.main}>
@@ -20,6 +24,7 @@ export function App() {
           <Route path="/" element={<WizardPage />} />
           <Route path="/wizard" element={<WizardPage />} />
           <Route path="/strategies" element={<StrategiesPage />} />
+          <Route path="/lab" element={<LabPage />} />
         </Routes>
       </main>
     </BrowserRouter>

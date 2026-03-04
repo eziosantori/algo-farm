@@ -5,7 +5,7 @@ ALL asset classes are supported: forex, metals, energies, commodities, and
 equity indices (S&P 500, DAX, FTSE …).
 
 Canonical Parquet path: <data_dir>/<INSTRUMENT>/<TIMEFRAME>.parquet
-Columns stored: Open, High, Low, Close, Volume  (title-case, UTC datetime index)
+Columns stored: Open, High, Low, Close, Volume  (title-case, timezone-naive datetime index)
 
 Incremental mode: if a Parquet file already exists, only bars after the last
 cached timestamp are fetched and merged in before re-saving.
@@ -233,7 +233,9 @@ class DukascopyDownloader:
             return None
         df = pd.read_parquet(path)
         if not isinstance(df.index, pd.DatetimeIndex):
-            df.index = pd.to_datetime(df.index, utc=True)
+            df.index = pd.to_datetime(df.index)
+        elif df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
         return df
 
 
@@ -250,7 +252,7 @@ def _parse_json_to_df(json_path: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.DataFrame(rows)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_localize(None)
     df = df.set_index("timestamp")
     df.index.name = "datetime"
 

@@ -1,0 +1,25 @@
+{
+  "version": "1",
+  "name": "SuperTrend + RSI v3",
+  "variant": "basic",
+  "indicators": [
+    {"name": "st_dir", "type": "supertrend_direction", "params": {"period": 10, "multiplier": 3.0}},
+    {"name": "rsi",    "type": "rsi",                  "params": {"period": 14}},
+    {"name": "ema10",  "type": "ema",                  "params": {"period": 10}},
+    {"name": "ema50",  "type": "ema",                  "params": {"period": 50}}
+  ],
+  "entry_rules": [
+    {"indicator": "st_dir", "condition": ">",  "value": 0},
+    {"indicator": "rsi",    "condition": ">",  "value": 50},
+    {"indicator": "ema10",  "condition": ">",  "compare_to": "ema50"}
+  ],
+  "exit_rules": [
+    {"indicator": "st_dir", "condition": "<", "value": 0}
+  ],
+  "position_management": {
+    "size": 0.02,
+    "sl_pips": null,
+    "tp_pips": null,
+    "max_open_trades": 1
+  }
+}

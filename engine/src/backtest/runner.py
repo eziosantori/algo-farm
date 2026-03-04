@@ -27,7 +27,12 @@ class BacktestRunner:
         params: dict[str, object],
     ) -> RunResult:
         strategy_cls = StrategyComposer().build_class(definition, params)
-        bt = Backtest(ohlcv, strategy_cls, cash=10_000, commission=0.0002)
+        # Auto-scale initial cash so backtesting.py can place at least a few integer
+        # units even for high-price instruments (BTC ~70K, Gold ~2K, etc.).
+        # Relative metrics (Sharpe, return %) are unaffected by the absolute cash level.
+        peak_close = float(ohlcv["Close"].max())
+        initial_cash = max(10_000, peak_close * 100)
+        bt = Backtest(ohlcv, strategy_cls, cash=initial_cash, commission=0.0002)
         stats = bt.run()
         trades = self._extract_trades(stats._trades)
         equity = stats._equity_curve["Equity"].tolist()

@@ -14,3 +14,26 @@ CREATE TABLE IF NOT EXISTS error_log (
   message TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS lab_sessions (
+  id TEXT PRIMARY KEY,
+  strategy_name TEXT NOT NULL,
+  strategy_json TEXT NOT NULL,
+  instruments TEXT NOT NULL,
+  timeframes TEXT NOT NULL,
+  constraints TEXT,
+  status TEXT NOT NULL DEFAULT 'running',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backtest_results (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES lab_sessions(id) ON DELETE CASCADE,
+  instrument TEXT NOT NULL,
+  timeframe TEXT NOT NULL,
+  params_json TEXT NOT NULL,
+  metrics_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL
+);
