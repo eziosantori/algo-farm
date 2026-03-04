@@ -172,37 +172,70 @@ Strategy lifecycle folder structure and Claude Code slash commands for the core 
 - [ ] M5 — React Dashboard: equity curve, drawdown, heatmap, live progress
 - [ ] M6 — Integration test: job submit via API → completion → results in SQLite
 
+### M8 — SuperTrend Indicator ⬜ TODO
+> Required to replicate trend-following strategies with dynamic trailing SL (e.g. cTrader Bot2).
+
+- [ ] Implement `supertrend` in `engine/src/backtest/indicators/trend.py`
+  - Formula: ATR-based bands (upper = `(H+L)/2 + mult×ATR`, lower = `(H+L)/2 - mult×ATR`)
+  - Primary output: single series with the active ST line value per bar
+  - Secondary output: `direction` series (`+1` = uptrend, `-1` = downtrend)
+  - Params: `period` (default 10), `multiplier` (default 3.0)
+- [ ] Register `"supertrend"` in `IndicatorRegistry`
+- [ ] Add `"supertrend"` to the Literal in `models.py` and the Zod enum in `shared/src/strategy.ts`
+- [ ] Update `StrategyComposer` to pass `High` and `Low` to indicators that declare those params
+  (also fixes the known ATR/ADX close-only limitation)
+- [ ] Tests: `tests/unit/test_indicators.py` — direction flip, band value, warmup period
+- [ ] Fixture: `tests/fixtures/supertrend_rsi_strategy.json` — baseline strategy with SuperTrend + RSI + EMA
+
+### M9 — Advanced Position Management ⬜ TODO
+> Enables replicating exit logic typical of trend-following strategies (trailing SL, scale-out, time exit).
+> Extends `PositionManagement` and `StrategyComposer` without breaking existing strategies.
+
+- [ ] **ATR-based SL** — add `sl_atr_mult: float | null` to `PositionManagement`: SL computed as
+  `entry_price ± ATR(14) × sl_atr_mult` at trade open (alternative to fixed `sl_pips`)
+- [ ] **Trailing SL** — add `trailing_sl: "atr" | "supertrend" | null` to `PositionManagement`:
+  - `"atr"`: move SL each bar to `price ± ATR × mult` (only in the favourable direction)
+  - `"supertrend"`: SL tracks the active ST line (requires M8)
+- [ ] **Scale-out** — add `scale_out: { trigger_r: float, volume_pct: int } | null`:
+  - Partial close of `volume_pct`% when profit ≥ `trigger_r × initial SL distance`
+  - After scale-out: move remaining SL to breakeven
+- [ ] **Time-based exit** — add `time_exit_bars: int | null`: close if P/L ≤ 0 after N bars
+- [ ] Update Zod schema in `shared/src/strategy.ts` with all new fields (all optional/nullable)
+- [ ] Update `StrategyComposer.next()`: track open-position state (bars elapsed, current SL, scaled flag)
+- [ ] Integration test with a fixture that exercises trailing SL, scale-out, and time exit
+- [ ] Backward compatibility: existing strategies without the new fields continue to work unchanged
+
 ### M7 — Claude Code Team: Strategy Development Team ⬜ PLANNED
-> Evoluzione delle skill Phase 2 (single-agent slash commands) in un team multi-agente
-> con ruoli specializzati. Si attiva quando Phase 3 introduce job asincroni e dati reali.
+> Evolution of Phase 2 skills (single-agent slash commands) into a multi-agent team
+> with specialised roles. Activated once Phase 3 introduces async jobs and real data.
 
-**Trigger per implementazione:** Phase 3 operativa (BullMQ + dati reali disponibili).
+**Implementation trigger:** Phase 3 operational (BullMQ + real data available).
 
-**Struttura team:**
+**Team structure:**
 ```
 Team "strategy-dev"
-├── strategist     — genera/modifica strategie, decide i cambiamenti basandosi sui risultati
-├── backtester     — esegue engine/run.py, legge JSONL, riporta metriche strutturate
-├── analyst        — interpreta pattern nei risultati, propone param grid, identifica regime
-└── validator      — (attivo da Phase 4) robustness suite: walk-forward, Monte Carlo, OOS
+├── strategist   — generates/modifies strategies, decides changes based on results
+├── backtester   — runs engine/run.py, reads JSONL, reports structured metrics
+├── analyst      — interprets result patterns, proposes param grids, identifies regime
+└── validator    — (active from Phase 4) robustness suite: walk-forward, Monte Carlo, OOS
 ```
 
-**Workflow team (sostituisce `/iterate` singolo agente):**
-1. `strategist` riceve obiettivo (es. "ottimizza per Sharpe > 1.5 su EURUSD H1")
-2. `strategist` scrive/modifica `draft/<name>.json` e assegna task a `backtester`
-3. `backtester` lancia subprocess, streamma JSONL, salva metriche, notifica `analyst`
-4. `analyst` legge metriche, identifica collo di bottiglia, propone modifica → notifica `strategist`
-5. Loop fino a target o N iterazioni
-6. `validator` (Phase 4+) esegue robustness check prima della promozione a `validated/`
+**Team workflow (replaces single-agent `/iterate`):**
+1. `strategist` receives objective (e.g. "optimise for Sharpe > 1.5 on EURUSD H1")
+2. `strategist` writes/modifies `draft/<name>.json` and assigns task to `backtester`
+3. `backtester` launches subprocess, streams JSONL, saves metrics, notifies `analyst`
+4. `analyst` reads metrics, identifies bottleneck, proposes change → notifies `strategist`
+5. Loop until target reached or N iterations exhausted
+6. `validator` (Phase 4+) runs robustness check before promoting to `validated/`
 
-**Parallelismo:** `backtester` può essere spawned multipli per testare diversi instrument/timeframe
-in parallelo, riducendo il tempo del loop di ottimizzazione.
+**Parallelism:** multiple `backtester` agents can be spawned to test different instruments/timeframes
+concurrently, reducing the optimisation loop time.
 
-**Skills esistenti come subagent prompts:**
-- `/backtest` → prompt del ruolo `backtester`
-- `/optimize` → coordina `backtester` + `analyst`
-- `/iterate`  → coordina l'intero team
-- `/new-strategy` → rimane skill singolo agente (task breve, non richiede team)
+**Existing skills as subagent prompts:**
+- `/backtest`      → `backtester` role prompt
+- `/optimize`      → coordinates `backtester` + `analyst`
+- `/iterate`       → coordinates the full team
+- `/new-strategy`  → stays single-agent (short task, no team needed)
 
 ---
 
@@ -237,3 +270,30 @@ in parallelo, riducendo il tempo del loop di ottimizzazione.
 - [ ] M4 — React Export UI: format selector, parameter mapper, code preview + download
 - [ ] M5 — Unit tests: parameter injection into templates
 - [ ] M6 — Integration test: export → validate generated code syntax
+
+---
+
+## Additional Notes — Engine features (future, unplanned)
+
+> Gaps identified during analysis of the cTrader strategy `superTrendRsi.cs` (Bot2 v0.9.3).
+> Not in the current plan; to be reassessed before Phase 4/5.
+
+- **Short selling**: `StrategyComposer` only calls `self_bt.buy()`. Bi-directional strategies
+  require adding `self_bt.sell()` and separate `entry_rules_long` / `entry_rules_short` in the
+  JSON schema.
+- **Indicator flip detection** (e.g. SuperTrend direction change): the rule engine evaluates only
+  the current value of an indicator, not its previous-bar value. Conditions like "was in downtrend,
+  now in uptrend" require a cross-bar state mechanism (e.g. `previous_value` in the rule schema
+  or a derived `supertrend_direction` indicator).
+- **Risk-% position sizing**: currently `size` is a fixed fraction of equity. The cTrader strategy
+  uses `risk% × account / (sl_pips × pip_value)`. Requires access to current account balance
+  inside `StrategyComposer`.
+- **Normalised BB Width**: `bollinger_bands` returns the absolute width `(upper−lower)`. The
+  cTrader strategy uses `(upper−lower) / mid × 100`. Can be addressed with a `normalized: bool`
+  param or a dedicated `bollinger_bands_pct` indicator.
+- **Cooldown logic**: pauses trading after N consecutive losses. Requires global state outside the
+  single position context; not expressible in the current rule engine.
+- **Trading hours filter**: excludes bars outside a time window. Requires access to the bar
+  timestamp inside `next()`.
+- **Named param namespacing**: (already in Phase 1 Known Limitations) shared `"period"` key
+  applies to all indicators in the param grid — causes collisions in multi-indicator optimisations.
