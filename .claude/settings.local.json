@@ -8,7 +8,10 @@
       "Bash(cd engine*)",
       "Bash(source .venv/bin/activate*)",
       "Bash(mkdir -p engine/strategies/*)",
-      "Bash(touch engine/strategies/*)"
+      "Bash(touch engine/strategies/*)",
+      "WebSearch",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

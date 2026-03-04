@@ -186,6 +186,23 @@ Strategy lifecycle folder structure and Claude Code slash commands for the core 
 - [x] Fixture: `tests/fixtures/supertrend_rsi_strategy.json` — SuperTrend direction + RSI entry/exit
 - [x] **61/61 tests passing, 92% coverage** — end-to-end smoke test clean
 
+### M10 — Dukascopy Data Downloader ✅
+> Real multi-asset OHLCV data via Dukascopy free feed, cached as Parquet.
+
+- [x] `engine/src/data/__init__.py` + `engine/src/data/instruments.py` — 17-instrument catalog
+  (Forex majors + crosses, Gold, Silver, Brent, WTI, Natural Gas) with timeframe mapping
+- [x] `engine/src/data/downloader.py` — `DukascopyDownloader`: `download()` (incremental cache),
+  `download_many()` (bulk with progress callback); Parquet format compatible with existing engine
+- [x] `engine/download.py` — CLI: `--instruments`, `--timeframes`, `--from`, `--to`, `--data-dir`,
+  `--force`, `--list-instruments`; summary table on completion
+- [x] Uses `npx dukascopy-node` subprocess (mirrors cbot-farm) — supports ALL asset classes
+- [x] **24 instruments**: forex majors/crosses, Gold, Silver, Brent, WTI, NatGas, Copper + 6 equity indices
+- [x] Equity indices confirmed working: US500 (S&P 500), GER40 (DAX), NAS100, UK100, JPN225, AUS200
+- [x] **61/61 tests passing** — end-to-end confirmed: download → backtest on 3 instruments × 2 timeframes
+
+**Supported timeframes:** M1, M5, M10, M15, M30, H1, H4, D1, W1
+**Prerequisites:** Node.js / npx in PATH (dukascopy-node pulled automatically via npx)
+
 ### M9 — Advanced Position Management ⬜ TODO
 > Enables replicating exit logic typical of trend-following strategies (trailing SL, scale-out, time exit).
 > Extends `PositionManagement` and `StrategyComposer` without breaking existing strategies.
