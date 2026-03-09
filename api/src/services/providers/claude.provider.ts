@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { LLMProvider, ProviderId } from "./base.js";
+import type { GenerateStrategyOptions, LLMProvider, ProviderId } from "./base.js";
 import { SYSTEM_PROMPT, STRATEGY_TOOL_SCHEMA, validateWithRetry } from "./base.js";
 import type { StrategyDefinition } from "@algo-farm/shared/strategy";
 
@@ -11,7 +11,10 @@ export class ClaudeProvider implements LLMProvider {
     this.client = new Anthropic({ apiKey: apiKey ?? process.env.ANTHROPIC_API_KEY });
   }
 
-  async generateStrategy(message: string): Promise<{ strategy: StrategyDefinition; explanation: string }> {
+  async generateStrategy(
+    message: string,
+    _options?: GenerateStrategyOptions
+  ): Promise<{ strategy: StrategyDefinition; explanation: string }> {
     const response = await this.callClaude(message);
     const toolUse = this.extractToolUse(response);
 

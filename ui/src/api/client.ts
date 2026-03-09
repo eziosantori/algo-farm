@@ -36,7 +36,21 @@ export interface StrategyRecord {
   updated_at: string;
 }
 
-export type ProviderId = "claude" | "gemini" | "openrouter";
+export type ProviderId = "openrouter";
+export interface OpenRouterModelOption {
+  id: string;
+  name: string;
+  context_length: number;
+  supports_tools: boolean;
+  supports_tool_choice: boolean;
+  source: "openrouter";
+}
+
+export interface OpenRouterModelsResponse {
+  models: OpenRouterModelOption[];
+  fetched_at: string;
+  cache_ttl_seconds: number;
+}
 
 // ---------------------------------------------------------------------------
 // Lab types
@@ -104,11 +118,19 @@ export interface LabSessionDetail {
 }
 
 export const api = {
-  wizardChat(message: string, provider: ProviderId = "gemini"): Promise<WizardChatResponse> {
+  wizardChat(
+    message: string,
+    provider: ProviderId = "openrouter",
+    model?: string
+  ): Promise<WizardChatResponse> {
     return request("/wizard/chat", {
       method: "POST",
-      body: JSON.stringify({ message, provider }),
+      body: JSON.stringify({ message, provider, model }),
     });
+  },
+
+  listOpenRouterFreeModels(): Promise<OpenRouterModelsResponse> {
+    return request("/wizard/openrouter/models");
   },
 
   createStrategy(definition: StrategyDefinition): Promise<{ id: string; created_at: string }> {

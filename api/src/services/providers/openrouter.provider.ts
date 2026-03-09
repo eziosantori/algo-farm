@@ -1,27 +1,54 @@
 import OpenAI from "openai";
-import type { LLMProvider, ProviderId } from "./base.js";
+import type { GenerateStrategyOptions, LLMProvider, ProviderId } from "./base.js";
 import { SYSTEM_PROMPT, STRATEGY_TOOL_SCHEMA, validateWithRetry } from "./base.js";
 import type { StrategyDefinition } from "@algo-farm/shared/strategy";
+
+const OPENROUTER_FALLBACK_MODEL = "openrouter/free";
 
 export class OpenRouterProvider implements LLMProvider {
   readonly id: ProviderId = "openrouter";
   private readonly client: OpenAI;
-  private readonly model: string;
+  private readonly defaultModel: string;
 
   constructor(apiKey?: string) {
     this.client = new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
       apiKey: apiKey ?? process.env.OPENROUTER_API_KEY ?? "",
     });
-    this.model = process.env.OPENROUTER_MODEL ?? "upstage/solar-pro-3:free";
+    this.defaultModel = process.env.OPENROUTER_MODEL ?? OPENROUTER_FALLBACK_MODEL;
   }
 
-  async generateStrategy(message: string): Promise<{ strategy: StrategyDefinition; explanation: string }> {
-    const rawArgs = await this.callOpenRouter(message);
+  async generateStrategy(
+    message: string,
+    options?: GenerateStrategyOptions
+  ): Promise<{ strategy: StrategyDefinition; explanation: string }> {
+    const model = options?.model?.trim() || this.defaultModel;
+
+    try {
+      return await this.generateWithModel(message, model);
+    } catch (primaryError) {
+      if (model === OPENROUTER_FALLBACK_MODEL) {
+        throw primaryError;
+      }
+
+      try {
+        return await this.generateWithModel(message, OPENROUTER_FALLBACK_MODEL);
+      } catch {
+        throw primaryError;
+      }
+    }
+  }
+
+  private async generateWithModel(
+    message: string,
+    model: string
+  ): Promise<{ strategy: StrategyDefinition; explanation: string }> {
+    const rawArgs = await this.callOpenRouter(message, model);
 
     const strategy = await validateWithRetry(rawArgs, async (errorMsg) => {
       return this.callOpenRouter(
         message,
+        model,
         `The previous strategy had validation errors: ${errorMsg}. Please fix them and call generate_strategy again.`
       );
     });
@@ -29,7 +56,11 @@ export class OpenRouterProvider implements LLMProvider {
     return { strategy, explanation: "Strategy generated successfully." };
   }
 
-  private async callOpenRouter(userMessage: string, followUpMessage?: string): Promise<unknown> {
+  private async callOpenRouter(
+    userMessage: string,
+    model: string,
+    followUpMessage?: string
+  ): Promise<unknown> {
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: userMessage },
@@ -41,7 +72,7 @@ export class OpenRouterProvider implements LLMProvider {
     }
 
     const response = await this.client.chat.completions.create({
-      model: this.model,
+      model,
       messages,
       tools: [
         {

@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI, FunctionCallingMode, type FunctionDeclarationSchema } from "@google/generative-ai";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { StrategyDefinitionSchema } from "@algo-farm/shared/strategy";
-import type { LLMProvider, ProviderId } from "./base.js";
+import type { GenerateStrategyOptions, LLMProvider, ProviderId } from "./base.js";
 import { SYSTEM_PROMPT, validateWithRetry } from "./base.js";
 import type { StrategyDefinition } from "@algo-farm/shared/strategy";
 
@@ -53,7 +53,10 @@ export class GeminiProvider implements LLMProvider {
     this.model = process.env.GEMINI_MODEL ?? "gemini-2.0-flash-lite";
   }
 
-  async generateStrategy(message: string): Promise<{ strategy: StrategyDefinition; explanation: string }> {
+  async generateStrategy(
+    message: string,
+    _options?: GenerateStrategyOptions
+  ): Promise<{ strategy: StrategyDefinition; explanation: string }> {
     const rawArgs = await this.callGemini(message);
 
     const strategy = await validateWithRetry(rawArgs, async (errorMsg) => {

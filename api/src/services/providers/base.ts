@@ -5,10 +5,16 @@ import {
 } from "@algo-farm/shared/strategy";
 
 export type ProviderId = "claude" | "gemini" | "openrouter";
+export interface GenerateStrategyOptions {
+  model?: string;
+}
 
 export interface LLMProvider {
   readonly id: ProviderId;
-  generateStrategy(message: string): Promise<{ strategy: StrategyDefinition; explanation: string }>;
+  generateStrategy(
+    message: string,
+    options?: GenerateStrategyOptions
+  ): Promise<{ strategy: StrategyDefinition; explanation: string }>;
 }
 
 export const SYSTEM_PROMPT = `You are an algorithmic trading strategy generator for the Algo Farm platform.

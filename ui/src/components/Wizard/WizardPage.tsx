@@ -1,14 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWizardStore } from "../../store/wizard.ts";
-import type { ProviderId } from "../../store/wizard.ts";
 import { StrategyPreview } from "./StrategyPreview.tsx";
-
-const PROVIDER_OPTIONS: { value: ProviderId; label: string; badge?: string }[] = [
-  { value: "gemini", label: "Gemini", badge: "free" },
-  { value: "claude", label: "Claude" },
-  { value: "openrouter", label: "Qwen / OpenRouter", badge: "free" },
-];
 
 const EXAMPLES = [
   "RSI strategy: enter long when RSI < 30, exit when RSI > 70",
@@ -24,12 +17,28 @@ export function WizardPage() {
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { messages, currentStrategy, isLoading, error, provider, setProvider, sendMessage, saveStrategy } =
-    useWizardStore();
+  const {
+    messages,
+    currentStrategy,
+    isLoading,
+    error,
+    model,
+    availableModels,
+    isModelsLoading,
+    modelsError,
+    setModel,
+    loadModels,
+    sendMessage,
+    saveStrategy,
+  } = useWizardStore();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    void loadModels();
+  }, [loadModels]);
 
   async function generate() {
     const msg = input.trim();
@@ -54,8 +63,8 @@ export function WizardPage() {
     }
   }
 
-  const providerLabel =
-    PROVIDER_OPTIONS.find((o) => o.value === provider)?.label ?? provider;
+  const modelLabel =
+    availableModels.find((option) => option.id === model)?.name ?? model;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -69,37 +78,42 @@ export function WizardPage() {
         </p>
       </div>
 
-      {/* Provider selector */}
-      <div className="flex items-center gap-2 mb-4">
+      {/* OpenRouter model selector */}
+      <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] items-center gap-2 mb-4">
         <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-          Provider:
+          OpenRouter model:
         </span>
-        <div className="flex gap-1">
-          {PROVIDER_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setProvider(opt.value)}
-              disabled={isLoading}
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${
-                provider === opt.value
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-              }`}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={isLoading || isModelsLoading}
+              className="min-w-[320px] max-w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-800 dark:text-gray-200 disabled:opacity-60"
             >
-              {opt.label}
-              {opt.badge && (
-                <span
-                  className={`px-1.5 py-px rounded text-[10px] font-semibold ${
-                    provider === opt.value
-                      ? "bg-white/20 text-white"
-                      : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-                  }`}
-                >
-                  {opt.badge}
-                </span>
+              {availableModels.length === 0 && (
+                <option value="openrouter/free">openrouter/free</option>
               )}
+              {availableModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} ({m.id})
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void loadModels()}
+              disabled={isLoading || isModelsLoading}
+              className="px-3 py-2 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 disabled:opacity-50"
+            >
+              {isModelsLoading ? "Refreshing…" : "Refresh"}
             </button>
-          ))}
+          </div>
+          {modelsError && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Model list unavailable, using fallback `openrouter/free`: {modelsError}
+            </p>
+          )}
         </div>
       </div>
 
@@ -139,7 +153,7 @@ export function WizardPage() {
               <p className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${
                 m.role === "user" ? "text-blue-200" : "text-gray-400"
               }`}>
-                {m.role === "user" ? "You" : providerLabel}
+                {m.role === "user" ? "You" : `OpenRouter (${modelLabel})`}
               </p>
               <p className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</p>
             </div>
@@ -150,7 +164,7 @@ export function WizardPage() {
           <div className="flex justify-start mb-3">
             <div className="bg-gray-100 dark:bg-gray-800 rounded-xl px-4 py-2.5">
               <p className="text-[10px] font-semibold uppercase tracking-wide mb-1 text-gray-400">
-                {providerLabel}
+                {`OpenRouter (${modelLabel})`}
               </p>
               <div className="flex items-center gap-1.5">
                 {[0, 1, 2].map((n) => (

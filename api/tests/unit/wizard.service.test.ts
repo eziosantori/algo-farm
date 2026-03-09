@@ -40,7 +40,10 @@ describe("WizardService", () => {
 
     expect(result.strategy.name).toBe("RSI Reversal");
     expect(result.explanation).toBe("Gemini result.");
-    expect(mockProvider.generateStrategy).toHaveBeenCalledWith("Create an RSI strategy");
+    expect(mockProvider.generateStrategy).toHaveBeenCalledTimes(1);
+    expect((mockProvider.generateStrategy as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toBe(
+      "Create an RSI strategy"
+    );
   });
 
   it("delegates to ClaudeProvider when provider=claude", async () => {
@@ -56,7 +59,10 @@ describe("WizardService", () => {
 
     expect(result.strategy.name).toBe("RSI Reversal");
     expect(result.explanation).toBe("Claude result.");
-    expect(mockProvider.generateStrategy).toHaveBeenCalledWith("Create a strategy");
+    expect(mockProvider.generateStrategy).toHaveBeenCalledTimes(1);
+    expect((mockProvider.generateStrategy as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toBe(
+      "Create a strategy"
+    );
   });
 
   it("delegates to OpenRouterProvider when provider=openrouter", async () => {
@@ -68,10 +74,14 @@ describe("WizardService", () => {
 
     const { WizardService } = await import("../../src/services/wizard.service.js");
     const service = new WizardService();
-    const result = await service.chat("Create a strategy", "openrouter");
+    const result = await service.chat("Create a strategy", "openrouter", {
+      model: "openrouter/free",
+    });
 
     expect(result.strategy.name).toBe("RSI Reversal");
-    expect(mockProvider.generateStrategy).toHaveBeenCalledWith("Create a strategy");
+    expect(mockProvider.generateStrategy).toHaveBeenCalledWith("Create a strategy", {
+      model: "openrouter/free",
+    });
   });
 });
 

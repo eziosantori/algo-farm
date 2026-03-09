@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import type { StrategyDefinition } from "@algo-farm/shared/strategy";
-import { api } from "../api/client.ts";
+import { api, type OpenRouterModelOption } from "../api/client.ts";
 
-export type ProviderId = "claude" | "gemini" | "openrouter";
+export type ProviderId = "openrouter";
+const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
 
 interface Message {
   role: "user" | "assistant";
@@ -14,8 +15,12 @@ interface WizardStore {
   currentStrategy: StrategyDefinition | null;
   isLoading: boolean;
   error: string | null;
-  provider: ProviderId;
-  setProvider: (p: ProviderId) => void;
+  model: string;
+  availableModels: OpenRouterModelOption[];
+  isModelsLoading: boolean;
+  modelsError: string | null;
+  setModel: (model: string) => void;
+  loadModels: () => Promise<void>;
   sendMessage: (msg: string) => Promise<void>;
   saveStrategy: () => Promise<{ id: string }>;
   reset: () => void;
@@ -26,14 +31,43 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
   currentStrategy: null,
   isLoading: false,
   error: null,
-  provider: "gemini",
+  model: DEFAULT_OPENROUTER_MODEL,
+  availableModels: [],
+  isModelsLoading: false,
+  modelsError: null,
 
-  setProvider(p: ProviderId) {
-    set({ provider: p });
+  setModel(model: string) {
+    set({ model });
+  },
+
+  async loadModels() {
+    set({ isModelsLoading: true, modelsError: null });
+    try {
+      const response = await api.listOpenRouterFreeModels();
+      const currentModel = get().model;
+      const hasCurrentModel = response.models.some((m) => m.id === currentModel);
+      const nextModel = hasCurrentModel
+        ? currentModel
+        : (response.models[0]?.id ?? DEFAULT_OPENROUTER_MODEL);
+
+      set({
+        availableModels: response.models,
+        model: nextModel,
+        isModelsLoading: false,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to load OpenRouter models";
+      set({
+        availableModels: [],
+        model: DEFAULT_OPENROUTER_MODEL,
+        isModelsLoading: false,
+        modelsError: message,
+      });
+    }
   },
 
   async sendMessage(msg: string) {
-    const { provider } = get();
+    const { model } = get();
     set((s) => ({
       messages: [...s.messages, { role: "user", content: msg }],
       isLoading: true,
@@ -41,7 +75,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
     }));
 
     try {
-      const { strategy, explanation } = await api.wizardChat(msg, provider);
+      const { strategy, explanation } = await api.wizardChat(msg, "openrouter", model);
       set((s) => ({
         messages: [...s.messages, { role: "assistant", content: explanation }],
         currentStrategy: strategy,
