@@ -291,6 +291,35 @@ Strategy lifecycle folder structure and Claude Code slash commands for the core 
 - StrategiesPage: "Run in Lab" inline form; `lifecycle_status` badge per row
 - LabPage: "🔗 Linked to strategy" tag on sessions with FK set
 
+### M12 — Genetic (NSGA-II) Multi-objective Optimiser ✅
+> Simultaneously optimises two objectives (e.g. Sharpe ↑ and max_drawdown ↑) using
+> Optuna's NSGA-II sampler; returns the full Pareto-optimal front.
+
+- [x] `engine/src/optimization/genetic.py` — `GeneticOptimizer` using `NSGAIISampler`
+  - Primary objective: any metric (default `sharpe_ratio`), maximised
+  - Secondary objective: `max_drawdown`, maximised (falls back to `profit_factor` when primary IS max_drawdown)
+  - `pareto_front` list returned alongside `best_params` / `best_metrics`
+  - `n_trials` + `population_size` configurable
+- [x] `engine/run.py` — added `--optimize genetic`, `--population-size N` flags;
+  `completed` message includes `pareto_front` when available
+- [x] `api/src/queue/backtest.queue.ts` — `optimizer` union extended with `"genetic"`;
+  `populationSize` field added to `BacktestJobData`
+- [x] `api/src/queue/backtest.worker.ts` — passes `--population-size` for genetic jobs
+- [x] `api/src/routes/lab.ts` — `RunSessionSchema` accepts `optimizer: "genetic"` + `population_size`
+- [x] `engine/tests/unit/test_genetic.py` — 4 tests (keys, callbacks, fallback secondary, data not found)
+- [x] **65/65 Python tests passing** (+4) | **64/64 API tests passing**
+
+**Usage from CLI:**
+```bash
+python run.py --strategy my_strategy.json --instruments EURUSD --timeframes H1 \
+  --param-grid my_grid.json --optimize genetic --n-trials 100 --population-size 30 \
+  --metric sharpe_ratio --db /tmp/run.db --data-dir data
+```
+
+**Usage from UI:** set `optimizer: "genetic"` in `POST /lab/sessions/:id/run` body.
+
+---
+
 ### M9 — Advanced Position Management ⬜ TODO
 > Enables replicating exit logic typical of trend-following strategies (trailing SL, scale-out, time exit).
 > Extends `PositionManagement` and `StrategyComposer` without breaking existing strategies.

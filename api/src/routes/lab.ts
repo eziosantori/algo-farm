@@ -51,8 +51,9 @@ const RunSessionSchema = z.object({
   engine_db_path: z.string().optional(),
   param_grid: z.record(z.unknown()).optional(),
   optimize_metric: z.string().optional(),
-  optimizer: z.enum(["grid", "bayesian"]).optional(),
+  optimizer: z.enum(["grid", "bayesian", "genetic"]).optional(),
   n_trials: z.number().int().positive().optional(),
+  population_size: z.number().int().min(4).max(200).optional(),
   from_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
@@ -176,8 +177,9 @@ router.post(
         dataDir: req.body.data_dir as string | undefined,
         engineDbPath: req.body.engine_db_path as string | undefined,
         optimizeMetric: req.body.optimize_metric as string | undefined,
-        optimizer: req.body.optimizer as "grid" | "bayesian" | undefined,
+        optimizer: req.body.optimizer as "grid" | "bayesian" | "genetic" | undefined,
         nTrials: req.body.n_trials as number | undefined,
+        populationSize: req.body.population_size as number | undefined,
         fromDate: req.body.from_date as string | undefined,
         toDate: req.body.to_date as string | undefined,
       };

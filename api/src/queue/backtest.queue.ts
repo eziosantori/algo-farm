@@ -10,8 +10,9 @@ export interface BacktestJobData {
   dataDir?: string;
   engineDbPath?: string;
   optimizeMetric?: string;
-  optimizer?: "grid" | "bayesian";
+  optimizer?: "grid" | "bayesian" | "genetic";
   nTrials?: number;
+  populationSize?: number;  // NSGA-II population size (genetic optimizer only)
   fromDate?: string;  // e.g. "2022-01-01" — triggers auto-download if data missing
   toDate?: string;    // e.g. "2024-12-31" — defaults to yesterday
 }

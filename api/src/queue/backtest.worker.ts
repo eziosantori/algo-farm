@@ -80,6 +80,7 @@ async function processBacktestJob(job: Job<BacktestJobData>): Promise<void> {
     optimizeMetric = "sharpe_ratio",
     optimizer = "grid",
     nTrials = 50,
+    populationSize = 20,
     fromDate = "2024-01-01",
     toDate = yesterday(),
   } = job.data;
@@ -114,8 +115,11 @@ async function processBacktestJob(job: Job<BacktestJobData>): Promise<void> {
     "--optimize", optimizer,
   ];
 
-  if (optimizer === "bayesian") {
+  if (optimizer === "bayesian" || optimizer === "genetic") {
     args.push("--n-trials", String(nTrials));
+  }
+  if (optimizer === "genetic") {
+    args.push("--population-size", String(populationSize));
   }
 
   if (paramGrid && Object.keys(paramGrid).length > 0) {
