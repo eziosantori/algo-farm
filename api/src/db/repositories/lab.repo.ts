@@ -6,7 +6,7 @@ import type { LifecycleStatus } from "./strategy.repo.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export type SessionStatus = "running" | "completed";
+export type SessionStatus = "running" | "completed" | "failed";
 
 export type ResultStatus =
   | "pending"

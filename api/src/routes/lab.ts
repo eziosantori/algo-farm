@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb } from "../db/client.js";
 import { LabRepository } from "../db/repositories/lab.repo.js";
 import { validateBody } from "../middleware/validate.js";
+import { backtestQueue } from "../queue/backtest.queue.js";
 
 const router = Router();
 
@@ -42,7 +43,18 @@ const UpdateResultStatusSchema = z.object({
 });
 
 const UpdateSessionStatusSchema = z.object({
-  status: z.enum(["running", "completed"]),
+  status: z.enum(["running", "completed", "failed"]),
+});
+
+const RunSessionSchema = z.object({
+  data_dir: z.string().optional(),
+  engine_db_path: z.string().optional(),
+  param_grid: z.record(z.unknown()).optional(),
+  optimize_metric: z.string().optional(),
+  optimizer: z.enum(["grid", "bayesian"]).optional(),
+  n_trials: z.number().int().positive().optional(),
+  from_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -138,6 +150,44 @@ router.patch(
     }
 
     res.json(updated);
+  }
+);
+
+// POST /lab/sessions/:id/run — enqueue a session for async execution
+router.post(
+  "/lab/sessions/:id/run",
+  validateBody(RunSessionSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    const repo = getRepo();
+    const session = repo.getSession(req.params["id"] as string);
+
+    if (!session) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Session not found" });
+      return;
+    }
+
+    try {
+      const jobData = {
+        sessionId: session.id,
+        strategyJson: JSON.stringify(session.strategy),
+        instruments: session.instruments,
+        timeframes: session.timeframes,
+        paramGrid: req.body.param_grid as Record<string, unknown> | undefined,
+        dataDir: req.body.data_dir as string | undefined,
+        engineDbPath: req.body.engine_db_path as string | undefined,
+        optimizeMetric: req.body.optimize_metric as string | undefined,
+        optimizer: req.body.optimizer as "grid" | "bayesian" | undefined,
+        nTrials: req.body.n_trials as number | undefined,
+        fromDate: req.body.from_date as string | undefined,
+        toDate: req.body.to_date as string | undefined,
+      };
+
+      const job = await backtestQueue.add("backtest" as const, jobData);
+      res.status(202).json({ job_id: job.id, session_id: session.id });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Queue error";
+      res.status(500).json({ error: "QUEUE_ERROR", message });
+    }
   }
 );
 

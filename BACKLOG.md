@@ -158,17 +158,60 @@ Strategy lifecycle folder structure and Claude Code slash commands for the core 
 
 ---
 
-## Phase 3 — Node.js API + BullMQ + Dashboard ⬜ TODO
+## Phase 3 — Node.js API + BullMQ + Dashboard ✅ DONE
 
 > Wrap the Phase 1 engine behind Node.js API and BullMQ; add React results dashboard.
 
-### Planned milestones
-- [ ] M1 — Express API scaffold: TypeScript strict, ESLint, better-sqlite3
-- [ ] M2 — BullMQ producer + Python subprocess worker (reads Phase 1 stdout)
-- [ ] M3 — WebSocket relay: stdout progress events → React clients
-- [ ] M4 — Bayesian optimisation (optuna) added to engine
-- [ ] M5 — React Dashboard: equity curve, drawdown, heatmap, live progress
-- [ ] M6 — Integration test: job submit via API → completion → results in SQLite
+### M1 — BullMQ + Redis infrastructure ✅
+- [x] `api/src/queue/connection.ts` — IORedis connection (configurable via `REDIS_URL`)
+- [x] `api/src/queue/backtest.queue.ts` — `Queue<BacktestJobData, void, "backtest">` + `BacktestJobData` type
+- [x] `api/package.json` — added `bullmq`, `ioredis`, `ws`, `@types/ws`
+- [x] `engine/requirements.txt` — added `optuna>=3.5` (installed 4.7.0)
+
+### M2 — BullMQ worker: Python subprocess ✅
+- [x] `api/src/queue/backtest.worker.ts` — BullMQ Worker that:
+  - Receives job from queue, writes strategy JSON to temp file
+  - Spawns `python engine/run.py` subprocess with all CLI args
+  - Reads JSONL stdout line-by-line: on `result` → persists to `backtest_results`; on `completed` → updates session status
+  - Supports both `grid` and `bayesian` optimizers
+  - Cleans up temp files on completion/failure
+  - Configurable via `PYTHON_BIN`, `DATA_DIR`, `ENGINE_DB_PATH`, `WORKER_CONCURRENCY` env vars
+- [x] `api/src/server.ts` — upgraded to `http.createServer()`, starts worker + WS on startup
+- [x] `api/src/routes/lab.ts` — new `POST /lab/sessions/:id/run` endpoint (202 + job_id)
+- [x] `SessionStatus` extended with `"failed"` in `lab.repo.ts` and `ui/src/api/client.ts`
+
+### M3 — WebSocket relay ✅
+- [x] `api/src/websocket/server.ts` — WS server attached to HTTP server
+  - Clients subscribe by sending `{ action: "subscribe", sessionId }`
+  - Server broadcasts all engine JSONL events (progress, result, completed) enriched with `sessionId`
+  - Broadcasts session lifecycle events: `started`, `session_completed`, `session_failed`
+- [x] `ui/src/hooks/useSessionProgress.ts` — React hook for WS subscription
+- [x] `ui/src/components/Dashboard/ProgressPanel.tsx` — live progress bar + live results table
+
+### M4 — Bayesian optimisation (Optuna) ✅
+- [x] `engine/src/optimization/bayesian.py` — `BayesianOptimizer` using Optuna TPE sampler
+  - Same JSONL output format as `GridSearchOptimizer` (fully compatible with worker)
+  - `n_trials` configurable (default 50); uses `suggest_categorical` for all swept params
+- [x] `engine/run.py` — added `--optimize {grid,bayesian}` and `--n-trials N` flags
+- [x] Worker passes `--optimize bayesian --n-trials N` when `optimizer === "bayesian"` in job data
+
+### M5 — React Dashboard ✅
+- [x] `ui/src/components/Dashboard/DashboardPage.tsx` — sessions list + run button + progress panel
+  - Auto-refreshes sessions every 5s
+  - "Run" button calls `POST /lab/sessions/:id/run` → subscribes to WS live progress
+- [x] `ui/src/components/Dashboard/ProgressPanel.tsx` — progress bar, elapsed time, live results table
+- [x] `ui/src/App.tsx` — added `/dashboard` route + "Dashboard" nav link
+- [x] `ui/package.json` — added `recharts` (available for future charts)
+
+### M6 — Integration tests ✅
+- [x] `api/tests/unit/backtest.worker.test.ts` — 4 unit tests (worker creation, event handlers, stop)
+- [x] `api/tests/integration/lab.run.test.ts` — 4 integration tests (`/run` endpoint: 404, 202, options passthrough, validation)
+- [x] **64/64 API tests passing** (was 50; +14 new tests)
+- [x] **61/61 Python tests still passing**
+
+**Prerequisite:** Redis must be running (`brew services start redis` or `docker run -d -p 6379:6379 redis:alpine`)
+
+**New env vars:** `REDIS_URL` (default `redis://localhost:6379`), `PYTHON_BIN` (default `python`), `DATA_DIR` (default `./engine/data`), `ENGINE_DB_PATH` (default `./engine_runs.db`), `WORKER_CONCURRENCY` (default `2`)
 
 ### M8 — SuperTrend Indicator ✅
 > Required to replicate trend-following strategies with dynamic trailing SL (e.g. cTrader Bot2).

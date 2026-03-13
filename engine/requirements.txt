@@ -9,3 +9,4 @@ pytest-cov>=4.1
 mypy>=1.8
 black>=24.0
 sqlmodel>=0.0.14
+optuna>=3.5

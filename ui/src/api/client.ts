@@ -56,7 +56,7 @@ export interface OpenRouterModelsResponse {
 // Lab types
 // ---------------------------------------------------------------------------
 
-export type SessionStatus = "running" | "completed";
+export type SessionStatus = "running" | "completed" | "failed";
 export type ResultStatus =
   | "pending"
   | "validated"
@@ -173,6 +173,25 @@ export const api = {
     return request("/lab/sessions", {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+
+  runLabSession(
+    sessionId: string,
+    options?: {
+      data_dir?: string;
+      engine_db_path?: string;
+      param_grid?: Record<string, unknown>;
+      optimize_metric?: string;
+      optimizer?: "grid" | "bayesian";
+      n_trials?: number;
+      from_date?: string;
+      to_date?: string;
+    }
+  ): Promise<{ job_id: string; session_id: string }> {
+    return request(`/lab/sessions/${sessionId}/run`, {
+      method: "POST",
+      body: JSON.stringify(options ?? {}),
     });
   },
 };

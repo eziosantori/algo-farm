@@ -17,7 +17,8 @@
       "Bash(pnpm add:*)",
       "Bash(pnpm install:*)",
       "Bash(pnpm:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(curl -s http://localhost:3001/lab/sessions | python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f\\\\\"{s['id'][:8]}... | {s['strategy_name']} | status={s['status']} | results={s['total_results']}\\\\\"\\) for s in data['sessions']]\")"
     ]
   }
 }

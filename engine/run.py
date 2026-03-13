@@ -52,7 +52,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--instruments", required=True, help="Comma-separated instruments (e.g. EURUSD,GBPUSD)")
     parser.add_argument("--timeframes", required=True, help="Comma-separated timeframes (e.g. H1,D1)")
     parser.add_argument("--param-grid", dest="param_grid", default=None, help="Path to param_grid JSON file")
-    parser.add_argument("--optimize", choices=["grid"], default="grid", help="Optimisation method")
+    parser.add_argument("--optimize", choices=["grid", "bayesian"], default="grid", help="Optimisation method")
+    parser.add_argument("--n-trials", dest="n_trials", type=int, default=50, help="Number of trials for Bayesian optimisation")
     parser.add_argument("--metric", default="sharpe_ratio", help="Metric to optimise for")
     parser.add_argument("--db", required=True, help="Path to SQLite database file")
     parser.add_argument("--data-dir", dest="data_dir", required=True, help="Root directory for OHLCV Parquet files")
@@ -119,7 +120,11 @@ def main(argv: list[str] | None = None) -> int:
 
     job_repo.update_status(job_id, "running")
 
-    optimizer = GridSearchOptimizer()
+    if args.optimize == "bayesian":
+        from src.optimization.bayesian import BayesianOptimizer
+        optimizer: GridSearchOptimizer | BayesianOptimizer = BayesianOptimizer(n_trials=args.n_trials)
+    else:
+        optimizer = GridSearchOptimizer()
 
     try:
         result = optimizer.run(

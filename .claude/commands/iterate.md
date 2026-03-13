@@ -23,8 +23,15 @@ Autonomously improve a trading strategy through repeated backtest â†’ analyze â†
         --instruments EURUSD \
         --timeframes H1 \
         --db /tmp/iterate_<iter>_$(date +%s).db \
-        --data-dir tests/fixtures/data_cache \
+        --data-dir data \
         2>/dev/null
+      ```
+      If the data file is missing (`data/EURUSD/H1.parquet` not found), download it first:
+      ```bash
+      cd /Users/esantori/git/personal/algo-farm/engine && \
+      source .venv/bin/activate && \
+      python download.py --instruments EURUSD --timeframes H1 \
+        --from 2024-01-01 --to $(date +%Y-%m-%d) --data-dir data
       ```
 
    b. **Parse metrics** from the `completed` JSONL message.
@@ -67,4 +74,27 @@ Autonomously improve a trading strategy through repeated backtest â†’ analyze â†
 
 5. Save the final version as `engine/strategies/draft/<name>_v<N>.json`.
 
-6. If target is met, suggest: "Consider running `/optimize` to find the best parameters for this improved strategy."
+6. **Save results to Lab** so they are visible in the UI (`http://localhost:5173/lab`):
+
+   Check if the API is reachable:
+   ```bash
+   curl -s --max-time 3 http://localhost:3001/health
+   ```
+   If reachable, create a Lab session and post the final result:
+   ```bash
+   # Create session
+   curl -s -X POST http://localhost:3001/lab/sessions \
+     -H "Content-Type: application/json" \
+     -d '{"strategy_name": "<name>", "strategy_json": "<escaped-final-json>", "instruments": ["EURUSD"], "timeframes": ["H1"]}'
+   # Post final result (extract session_id from above response)
+   curl -s -X POST http://localhost:3001/lab/sessions/<session_id>/results \
+     -H "Content-Type: application/json" \
+     -d '{"instrument": "EURUSD", "timeframe": "H1", "params_json": "{}", "metrics_json": "<escaped-final-metrics>"}'
+   # Mark session completed
+   curl -s -X PATCH http://localhost:3001/lab/sessions/<session_id>/status \
+     -H "Content-Type: application/json" \
+     -d '{"status": "completed"}'
+   ```
+   If API is not reachable, skip silently (results are already saved to file).
+
+7. If target is met, suggest: "Consider running `/optimize` to find the best parameters for this improved strategy."

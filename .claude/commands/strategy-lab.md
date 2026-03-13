@@ -18,7 +18,7 @@ and stores all results in the Strategy Lab. Requires minimal user interaction �
 - `--target`: improvement goal, default `"sharpe > 0.5"`. Supported: `sharpe > N`, `return > N`, `win_rate > N`, `drawdown < N`, `pf > N` (profit factor)
 - `--iterations`: max improvement iterations after baseline, default `3`
 - `--constraints`: comma-separated `key=value` pairs for final table display (e.g. `min_sharpe=0.4,max_dd=20`)
-- `--data-dir`: OHLCV data cache, default `engine/tests/fixtures/data_cache`
+- `--data-dir`: OHLCV data cache, default `engine/data`
 - `--api-url`: default `http://localhost:3001`
 
 Parse constraints into a JSON object: `{"min_sharpe": 0.4, "max_dd": 20}`.
@@ -48,6 +48,22 @@ curl -s -X POST <api-url>/lab/sessions \
 ```
 
 Extract `session_id`. Report: `Lab session: <session_id>`
+
+### Step 3b — Download missing data
+
+Before running any backtest, check which (instrument, timeframe) pairs are missing from `--data-dir`.
+For each missing pair, download it:
+```bash
+cd /Users/esantori/git/personal/algo-farm/engine && \
+source .venv/bin/activate && \
+python download.py \
+  --instruments <missing-instruments> \
+  --timeframes <missing-timeframes> \
+  --from 2024-01-01 --to $(date +%Y-%m-%d) \
+  --data-dir <data-dir>
+```
+A file is present if `<data-dir>/<INSTRUMENT>/<TIMEFRAME>.parquet` exists.
+If download fails for an instrument, skip it and continue with available data.
 
 ### Step 4 — Baseline run
 

@@ -7,38 +7,138 @@
 
 ## What this project is
 
-An **algo trading strategy development platform**. Users describe a trading idea in natural language; the platform converts it to a structured strategy definition, runs backtests and optimizations autonomously, validates robustness statistically, and exports the result to cTrader or TradingView Pine Script.
+An **algo trading strategy development platform**. Users describe a trading idea in natural language;
+the platform converts it to a structured strategy definition, runs backtests and optimizations
+autonomously, validates robustness statistically, and exports the result to cTrader or Pine Script.
 
-**Current status:** Phase 1 (Python Engine) and Phase 2 (Strategy Wizard + Lab) are complete. Current work is Phase 3 planning (Node.js API + BullMQ + Dashboard).
+**Current status:** Phase 1 (Python Engine), Phase 2 (Strategy Wizard + Lab), and Phase 3
+(BullMQ + Dashboard + Bayesian optimisation) are complete.
 
 ---
 
-## Architecture in one page
+## Quick start for agents — use the skills
+
+Claude Code slash commands are the fastest way to work with strategies.
+Run them from the project root (`/Users/esantori/git/personal/algo-farm`).
+
+### `/new-strategy <description>`
+
+Generate a valid `StrategyDefinition` JSON from natural language.
 
 ```
-Phase 1 (now)
-  CLI: python engine/run.py --strategy s.json --instruments EURUSD --timeframes H1 --db ./db.sqlite
-  Output: newline-delimited JSON on stdout (progress / result / completed)
-  Storage: SQLite (algo_farm.db) — written by engine, read by anyone
+/new-strategy "RSI mean-reversion: buy when RSI < 30 and SuperTrend is up, exit when RSI > 70"
+```
 
-Phase 2+ (later)
-  Node.js API (Express) → wraps CLI via child_process / BullMQ
-  React UI → calls Node.js API
-  Redis → job queue (BullMQ)
+Saves to `engine/strategies/draft/<name>.json`.
+
+---
+
+### `/backtest <strategy-file> [--instruments EURUSD,XAUUSD] [--timeframes H1,M15]`
+
+Run the engine on one or more (instrument × timeframe) pairs and display a formatted metrics table.
+
+```
+/backtest supertrend_rsi.json
+/backtest supertrend_rsi.json --instruments EURUSD,BTCUSD --timeframes H1,M15
+```
+
+Resolves names from `engine/strategies/draft/` if not an absolute path.
+Downloads missing data automatically (Dukascopy, cached as Parquet).
+
+---
+
+### `/iterate <strategy-file> [--target "sharpe > 1.0"] [--iterations 5]`
+
+Autonomously improves a strategy through repeated backtest → diagnose → modify cycles.
+
+```
+/iterate supertrend_rsi.json --target "sharpe > 1.5" --iterations 5
+```
+
+- Diagnoses the worst metric and applies one focused structural change per iteration
+- Keeps the change only if it improves the score by ≥ 2%
+- Saves the best version as `engine/strategies/draft/<name>_v<N>.json`
+- Posts final results to the Lab API → visible at `http://localhost:5173/lab`
+
+---
+
+### `/optimize <strategy-file> [--metric sharpe_ratio] [--param-grid grid.json]`
+
+Grid-search parameter sweep. Displays results ranked by metric.
+
+```
+/optimize supertrend_rsi.json --metric sharpe_ratio
+```
+
+---
+
+### `/strategy-lab <strategy-file> [options]`
+
+Multi-asset × multi-timeframe improvement loop. Most powerful skill.
+
+```
+/strategy-lab supertrend_rsi.json \
+  --instruments EURUSD,XAUUSD,BTCUSD \
+  --timeframes H1,M15 \
+  --target "sharpe > 0.5" \
+  --iterations 3
+```
+
+Full option set:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--instruments` | `EURUSD` | Comma-separated list |
+| `--timeframes` | `H1` | Comma-separated list |
+| `--target` | `sharpe > 0.5` | `sharpe > N`, `return > N`, `win_rate > N`, `drawdown < N`, `pf > N` |
+| `--iterations` | `3` | Max improvement iterations after baseline |
+| `--constraints` | — | `min_sharpe=0.4,max_dd=20` — filter display table |
+| `--data-dir` | `engine/data` | Parquet cache root |
+| `--api-url` | `http://localhost:3001` | Lab API base URL |
+
+Flow:
+1. Runs baseline on all pairs
+2. Diagnoses weaknesses, applies one structural change per iteration
+3. Keeps improvements (≥ 2% threshold), reverts regressions
+4. Posts all results to Lab → asks for human validation once at the end
+5. Downloads missing data automatically before running
+
+Results visible at `http://localhost:5173/lab` after the run.
+
+---
+
+## Architecture
+
+```
+Python engine (CLI)          Node.js API (Express)         React UI
+─────────────────────        ─────────────────────         ─────────────────────
+engine/run.py                api/src/server.ts             ui/src/App.tsx
+engine/download.py           api/src/routes/              ui/src/components/
+engine/src/backtest/         api/src/queue/ (BullMQ)      ui/src/hooks/
+engine/src/optimization/     api/src/websocket/           ui/src/api/client.ts
+engine/src/data/             api/src/db/                  ui/src/store/
+```
+
+```
+CLI agents (LLM-driven):  run Python directly — no queue overhead
+UI-submitted jobs:        POST /lab/sessions/:id/run → BullMQ → Worker → Python subprocess
+                          → JSONL stdout → WebSocket → React ProgressPanel (live)
 ```
 
 ### Layer ownership — hard rules
 
 | Layer | Owns | Must NOT |
 |-------|------|----------|
-| **Python engine** | Backtest, optimization, metrics, robustness, SQLite writes | Serve HTTP, call external APIs, depend on Node/Redis |
-| **Node.js API** | Job orchestration, LLM calls, WebSocket, SQLite reads via repos | Run long compute, store state in memory |
+| **Python engine** | Backtest, optimisation, metrics, SQLite writes | Serve HTTP, call external APIs, depend on Node/Redis |
+| **Node.js API** | Job orchestration, LLM calls, WebSocket, SQLite reads | Run long compute, store state in memory |
 | **React UI** | Rendering, client validation, WebSocket subscribe | Call Python directly, write to SQLite |
+
+---
 
 ## Strategy lifecycle
 
 ```
-[Wizard] → strategies (DB, lifecycle_status=draft)
+[/new-strategy or Wizard] → strategies (DB, lifecycle_status=draft)
               │
               ▼ "Run in Lab" (StrategiesPage → POST /lab/sessions)
          lab_sessions (strategy_id FK)
@@ -49,213 +149,189 @@ Phase 2+ (later)
          draft → optimizing → validated → production_standard / production_aggressive / production_defensive
 ```
 
----
-
-## Folder map (target monorepo layout)
-
-```
-algo-farm/
-├── AGENTS.md               ← you are here
-├── Mission.md              ← original requirements (read-only reference)
-├── docs/                   ← all planning & architecture documents
-│   ├── PLAN.md             ← roadmap, milestones, folder structure
-│   ├── ARCHITECTURE.md     ← diagrams, layer boundaries, data flows
-│   ├── SCHEMA.md           ← all data contracts (CLI, SQLite, BullMQ, JSONL)
-│   ├── API_SPEC.md         ← OpenAPI 3.1 spec (Phase 2+) + CLI quick-ref
-│   ├── CONVENTIONS.md      ← naming, extension patterns, commit format
-│   ├── TESTING_STRATEGY.md ← test philosophy, examples, CI pipeline
-│   ├── AGENTS_AND_SKILLS.md← in-platform agent roles (Phase 2+)
-│   └── copilot-instructions.md ← LLM system prompts & developer AI guidance
-├── engine/                 ← Python 3.11+ compute layer (BUILD THIS FIRST)
-├── api/                    ← Node.js 20+ API layer (Phase 2+)
-├── ui/                     ← React + TypeScript UI (Phase 2+)
-├── data/                   ← OHLCV cache (Parquet) + fetch scripts
-└── shared/                 ← JSON Schema, Pydantic models, Zod schemas
-```
+Strategy files on disk: `engine/strategies/{draft,optimizing,validated,production}/`
 
 ---
 
-## Phase 1 — what to build
-
-### CLI entry point
-
-```
-engine/run.py [flags]
-```
-
-| Flag | Required | Default | Notes |
-|------|----------|---------|-------|
-| `--strategy` | Yes | — | Path to `strategy.json` (StrategyDefinition v1) |
-| `--instruments` | Yes | — | Comma-separated: `EURUSD,GBPUSD` |
-| `--timeframes` | Yes | — | Comma-separated: `H1,D1` |
-| `--param-grid` | No | — | Path to `param_grid.json`; omit for single run |
-| `--optimize` | No | `grid` | `grid` or `bayesian` (bayesian = Phase 3) |
-| `--metric` | No | `sharpe_ratio` | `sharpe_ratio`, `calmar_ratio`, `profit_factor` |
-| `--data-start` | No | all | `YYYY-MM-DD` |
-| `--data-end` | No | all | `YYYY-MM-DD` |
-| `--db` | No | `./algo_farm.db` | SQLite file path |
-| `--data-dir` | No | `./data/cache` | Root of Parquet cache |
-| `--resume-job` | No | — | Resume interrupted job by UUID |
-| `--log-level` | No | `INFO` | `DEBUG`, `INFO`, `WARNING` |
-
-### stdout protocol (JSONL — one JSON object per line)
-
-```jsonl
-{"type":"progress","job_id":"<uuid>","pct":25,"current":{"instrument":"EURUSD","timeframe":"H1","iteration":3,"total":12,"phase":"grid_search"},"elapsed_seconds":60,"estimated_remaining_seconds":180}
-{"type":"result","job_id":"<uuid>","instrument":"EURUSD","timeframe":"H1","params":{"sma_period":20},"metrics":{"sharpe_ratio":1.42,"max_drawdown":-0.12,"win_rate":0.58,"net_pnl":1250.5,"num_trades":87,"profit_factor":1.65,"calmar_ratio":1.5,"cagr":0.18,"sortino_ratio":1.85,"expectancy":14.37,"avg_trade_duration_bars":6},"run_id":"<uuid>"}
-{"type":"completed","job_id":"<uuid>","total_runs":12,"optimization_method":"grid","best_params":{"sma_period":50},"best_metrics":{"sharpe_ratio":1.85,"max_drawdown":-0.14,"win_rate":0.62},"db_path":"./algo_farm.db","completed_at":"2026-02-24T10:00:00Z"}
-```
-
-- **Errors → stderr** (plain text, never JSON). Never mix error text into stdout.
-- **Exit codes:** `0` = success, `1` = fatal error, `2` = interrupted (resumable).
-
-### `StrategyDefinition` v1 — required fields
-
-Full JSON Schema in `docs/SCHEMA.md §2`. Minimum viable structure:
+## `StrategyDefinition` v1 — canonical format
 
 ```json
 {
-  "version": "1.0",
-  "name": "My Strategy",
+  "version": "1",
+  "name": "SuperTrend + RSI",
   "variant": "basic",
   "indicators": [
-    { "name": "sma_20", "type": "sma", "params": { "period": 20 } }
+    { "name": "st_dir", "type": "supertrend_direction", "params": { "period": 10, "multiplier": 3.0 } },
+    { "name": "rsi",    "type": "rsi",                  "params": { "period": 14 } }
   ],
   "entry_rules": [
-    { "logic_type": "price_above", "indicator_ref": "sma_20", "side": "long", "all_must_match": true }
+    { "indicator": "st_dir", "condition": ">", "value": 0 },
+    { "indicator": "rsi",    "condition": ">", "value": 50 }
   ],
   "exit_rules": [
-    { "logic_type": "stop_loss" }
+    { "indicator": "st_dir", "condition": "<", "value": 0 }
   ],
   "position_management": {
-    "variant_type": "basic",
-    "stop_loss_pips": 20,
-    "take_profit_pips": 40
+    "size": 0.02,
+    "sl_pips": null,
+    "tp_pips": null,
+    "max_open_trades": 1
   }
 }
 ```
 
-Valid `indicator.type` values: `sma ema macd rsi stoch atr bollinger_bands momentum adx cci obv williamsr`
-
-Valid `entry_rule.logic_type` values: `price_above price_below indicator_cross indicator_above indicator_below`
-
-Valid `exit_rule.logic_type` values: `stop_loss take_profit time_based indicator_cross indicator_above indicator_below price_level`
-
-### `param_grid.json` structure
+**Rule format:**
 
 ```json
-{
-  "sma_period": [20, 50, 100],
-  "breakout_threshold": [1.0, 1.5, 2.0],
-  "slippage_pips": 2
-}
+{ "indicator": "<name>", "condition": ">|<|>=|<=|==|!=", "value": <number> }
+{ "indicator": "<name>", "condition": ">|<|>=|<=",        "compare_to": "<other-indicator-name>" }
 ```
 
-Arrays = swept. Scalars = fixed. Full schema in `docs/SCHEMA.md §1.1`.
+- `entry_rules` = AND conditions (all must be true to enter long)
+- `exit_rules` = OR conditions (any one triggers close)
+- `compare_to` must reference another `name` in `indicators` — NOT `"close"`
 
-### SQLite tables written by Phase 1 engine
+**Valid `indicator.type` values:**
 
-| Table | Written at |
-|-------|-----------|
-| `jobs` | Job start + completion |
-| `runs` | After each instrument/timeframe/param combination |
-| `error_log` | On any caught exception |
+```
+sma  ema  macd  rsi  stoch  atr  bollinger_bands  adx  cci  obv  williamsr
+supertrend  supertrend_direction
+```
 
-Full DDL in `docs/SCHEMA.md §3`.
+**`param_grid.json` structure** (for `/optimize`):
+
+```json
+{ "period": [10, 14, 20], "multiplier": [2.0, 3.0] }
+```
+
+Arrays = swept. Scalars = fixed. Keys must match indicator param names.
 
 ---
 
-## Engine internals — file layout
+## Engine CLI reference
 
+```bash
+cd /Users/esantori/git/personal/algo-farm/engine && source .venv/bin/activate
+
+# Single backtest
+python run.py --strategy strategies/draft/my_strategy.json \
+  --instruments EURUSD --timeframes H1 \
+  --db /tmp/run.db --data-dir data
+
+# Grid optimisation
+python run.py --strategy strategies/draft/my_strategy.json \
+  --instruments EURUSD --timeframes H1 \
+  --param-grid strategies/draft/my_grid.json \
+  --optimize grid --metric sharpe_ratio \
+  --db /tmp/run.db --data-dir data
+
+# Bayesian optimisation
+python run.py ... --optimize bayesian --n-trials 50
+
+# Download data (auto-called by skills when data is missing)
+python download.py --instruments EURUSD,XAUUSD,BTCUSD \
+  --timeframes H1,M15 \
+  --from 2024-01-01 --to $(date +%Y-%m-%d) \
+  --data-dir data
 ```
-engine/
-├── run.py                      ← CLI entry point (argparse → orchestrator)
-├── src/
-│   ├── backtest/
-│   │   ├── runner.py           ← BacktestRunner: load OHLCV, apply strategy, emit results
-│   │   ├── strategy.py         ← compose strategy from StrategyDefinition
-│   │   └── indicators/
-│   │       ├── __init__.py     ← IndicatorRegistry
-│   │       ├── trend.py        ← sma, ema, macd
-│   │       ├── momentum.py     ← rsi, stoch, cci, williamsr, obv
-│   │       └── volatility.py   ← atr, bollinger_bands, adx
-│   ├── optimization/
-│   │   ├── grid_search.py      ← GridSearchOptimizer
-│   │   └── bayesian.py         ← BayesianOptimizer (optuna) — Phase 3
-│   ├── robustness/             ← Phase 4: walk_forward, monte_carlo, oos_test, etc.
-│   ├── storage/
-│   │   ├── db.py               ← SQLite connection, init_db(), repositories
-│   │   └── migrations/         ← alembic env + versions
-│   ├── metrics.py              ← calculate_sharpe, calmar, sortino, max_dd, etc.
-│   └── utils.py                ← logging setup, Parquet loader
-└── tests/
-    ├── cli/                    ← CLI contract tests (subprocess, no services)
-    ├── unit/                   ← indicators, metrics, strategy logic
-    ├── integration/            ← backtest correctness (known data → known metrics)
-    └── fixtures/
-        ├── simple_sma_strategy.json
-        ├── simple_param_grid.json
-        ├── generate_fixtures.py    ← generates synthetic Parquet data
-        └── data_cache/EURUSD/H1.parquet
+
+**Data file location:** `engine/data/<INSTRUMENT>/<TIMEFRAME>.parquet`
+**Synthetic fixtures (committed):** `engine/tests/fixtures/data_cache/EURUSD/{H1,D1}.parquet` (500 bars)
+**Supported instruments:** 34 total — forex majors/crosses, Gold, Silver, Brent, WTI, NatGas, Copper, US500, NAS100, GER40, UK100, JPN225, AUS200, 10 NASDAQ stocks, 33 crypto pairs (BTCUSD, ETHUSD …)
+**Supported timeframes:** M1, M5, M10, M15, M30, H1, H4, D1, W1
+
+### JSONL stdout protocol
+
+```jsonl
+{"type":"progress","pct":25,"current":{"instrument":"EURUSD","timeframe":"H1","iteration":3,"total":12},"elapsed_seconds":60}
+{"type":"result","instrument":"EURUSD","timeframe":"H1","params":{"period":14},"metrics":{"sharpe_ratio":1.42,"max_drawdown":-0.12,"win_rate_pct":58.0,"total_trades":87,"profit_factor":1.65,"total_return_pct":18.5}}
+{"type":"completed","total_runs":12,"best_params":{"period":14},"best_metrics":{...}}
+```
+
+Errors → stderr only. Exit codes: `0` = success, `1` = error, `2` = interrupted (resumable).
+
+---
+
+## Lab API quick reference
+
+Base URL: `http://localhost:3001`
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/lab/sessions` | Create session |
+| `GET` | `/lab/sessions` | List sessions |
+| `GET` | `/lab/sessions/:id` | Session detail + results |
+| `PATCH` | `/lab/sessions/:id/status` | Update status (`running`/`completed`/`failed`) |
+| `POST` | `/lab/sessions/:id/results` | Add result |
+| `POST` | `/lab/sessions/:id/run` | Enqueue backtest job (BullMQ) |
+| `PATCH` | `/lab/results/:id/status` | Validate/promote/reject result |
+
+Result status lifecycle: `pending → validated | rejected | production_standard | production_aggressive | production_defensive`
+
+---
+
+## Monorepo setup
+
+```bash
+# After fresh clone
+pnpm install
+pnpm rebuild better-sqlite3 esbuild
+
+# Run API (port 3001)
+pnpm --filter api dev
+
+# Run UI (port 5173, proxies /api → 3001)
+pnpm --filter ui dev
+
+# Run tests
+pnpm --filter api test          # 64 tests
+cd engine && pytest tests -v    # 61 tests
+
+# Redis required for BullMQ (UI-submitted jobs)
+docker compose up -d
+```
+
+**env vars** (`api/.env`): `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `PORT=3001`, `DB_PATH=./algo_farm.db`, `REDIS_URL=redis://localhost:6379`, `PYTHON_BIN=/path/to/engine/.venv/bin/python`, `DATA_DIR=./engine/data`, `WORKER_CONCURRENCY=2`
+
+---
+
+## Testing quick reference
+
+```bash
+# Python engine — full suite
+cd engine && source .venv/bin/activate
+pytest tests -v --cov=src --cov-report=term-missing
+
+# API — all tests (unit + integration)
+pnpm --filter api test
+
+# Type check
+mypy engine/src --strict
 ```
 
 ---
 
-## How to extend (pointers)
+## Code standards
 
-| Task | Steps | Full guide |
-|------|-------|-----------|
-| Add indicator | Implement in `indicators/<file>.py`, register in `IndicatorRegistry`, add to JSON Schema enum, write unit test | `docs/CONVENTIONS.md §2` |
-| Add robustness test | Implement function in `robustness/<file>.py`, register in `RobustnessRegistry`, write integration test | `docs/CONVENTIONS.md §2` |
-| Add export format | Implement `ExportAdapter` in `api/src/services/export/adapters/`, register in `ExportService` | `docs/CONVENTIONS.md §2` |
-
----
-
-## Code standards (non-negotiable)
-
-- **Python:** type hints on every function (mypy strict), Google-style docstrings, `snake_case`
+- **Python:** type hints everywhere (mypy strict), Google-style docstrings, `snake_case`
 - **TypeScript:** no `any`, strict mode, `camelCase` functions, `PascalCase` classes
 - **Tests:** every new function has a unit test; every CLI flag has a contract test
 - **Errors to stderr:** the engine never writes non-JSON to stdout
 - **No secrets in code:** all config via env vars or CLI flags
-
-Full standards: `docs/CONVENTIONS.md`
-
----
-
-## Testing — quick reference
-
-```bash
-# Phase 1 CLI contract tests (no services needed)
-pytest engine/tests/cli -v
-
-# Unit tests
-pytest engine/tests/unit -v
-
-# Integration tests (requires fixture Parquet data)
-python engine/tests/fixtures/generate_fixtures.py   # run once
-pytest engine/tests/integration -v
-
-# Full engine suite with coverage
-pytest engine/tests -v --cov=engine/src --cov-report=term-missing
-
-# Lint + type check
-mypy engine/src --strict
-black --check engine/src engine/tests
-```
-
-Full test architecture: `docs/TESTING_STRATEGY.md`
+- **Written artifacts always in English:** code, comments, docs, JSON, commit messages
 
 ---
 
 ## What NOT to do
 
-- **Do not add HTTP endpoints to the Python engine.** It must remain CLI-only. Node.js is the HTTP layer.
-- **Do not import Node.js / BullMQ concepts into Python.** The engine is standalone.
-- **Do not write to stdout from the engine except JSONL messages.** All logging goes to stderr via the `logging` module.
-- **Do not commit large Parquet files.** The fixture generator creates tiny synthetic data; real data stays in `/data/cache` (gitignored).
-- **Do not create a new file for a one-function addition.** Add to the appropriate existing module.
+- **Do not add HTTP endpoints to the Python engine.** It must remain CLI-only.
+- **Do not use `"close"` as a `compare_to` value** in rules — it is not a valid indicator name. Use an EMA for price-vs-MA comparisons.
+- **Do not write to stdout from the engine except JSONL.** All logging goes to stderr.
+- **Do not commit large Parquet files.** Real data goes in `engine/data/` (gitignored).
+- **Do not create a new file for a one-function addition.**
 - **Do not skip tests.** CLI contract tests and unit tests are P0.
+- **Do not use `execFileSync` or blocking subprocess calls** in the Node.js API — always use async `spawn` + Promise to avoid blocking the event loop and causing BullMQ lock expiry.
 
 ---
 
@@ -263,12 +339,10 @@ Full test architecture: `docs/TESTING_STRATEGY.md`
 
 | Document | When to read |
 |----------|-------------|
-| `docs/PLAN.md` | Roadmap, milestones, folder structure |
-| `docs/SCHEMA.md` | All contracts: CLI flags, JSONL protocol, SQLite DDL, StrategyDefinition |
-| `docs/ARCHITECTURE.md` | Layer boundaries, sequence diagrams, BullMQ setup |
+| `BACKLOG.md` | Milestones, status, known limitations |
+| `docs/SCHEMA.md` | All contracts: CLI flags, JSONL protocol, SQLite DDL |
+| `docs/ARCHITECTURE.md` | Layer boundaries, sequence diagrams |
 | `docs/CONVENTIONS.md` | Naming, extension patterns, commit format |
-| `docs/TESTING_STRATEGY.md` | Test philosophy, examples, CI pipeline |
-| `docs/API_SPEC.md` | REST API (Phase 2+) + CLI quick-reference |
-| `docs/AGENTS_AND_SKILLS.md` | In-platform agent roles (Phase 2+) + Phase 1 agent loop |
-| `docs/copilot-instructions.md` | LLM system prompts, developer AI guidance |
+| `docs/TESTING_STRATEGY.md` | Test philosophy, CI pipeline |
+| `docs/API_SPEC.md` | REST API + CLI quick-reference |
 | `Mission.md` | Original requirements — do not modify |
