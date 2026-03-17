@@ -47,11 +47,24 @@ export const RuleDefSchema = z.object({
 
 export type RuleDef = z.infer<typeof RuleDefSchema>;
 
+export const ScaleOutSchema = z.object({
+  trigger_r: z.number().positive().default(1.5),
+  volume_pct: z.number().int().min(1).max(99).default(50),
+});
+
+export type ScaleOut = z.infer<typeof ScaleOutSchema>;
+
 export const PositionManagementSchema = z.object({
   size: z.number().default(0.02),
   sl_pips: z.number().nullable().optional(),
   tp_pips: z.number().nullable().optional(),
   max_open_trades: z.number().int().default(1),
+  // M9 — Advanced Position Management
+  sl_atr_mult: z.number().positive().nullable().optional(),
+  trailing_sl: z.enum(["atr", "supertrend"]).nullable().optional(),
+  trailing_sl_atr_mult: z.number().positive().default(2.0),
+  scale_out: ScaleOutSchema.nullable().optional(),
+  time_exit_bars: z.number().int().positive().nullable().optional(),
 });
 
 export type PositionManagement = z.infer<typeof PositionManagementSchema>;

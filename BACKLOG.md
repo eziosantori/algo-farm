@@ -336,23 +336,22 @@ python run.py --strategy my_strategy.json --instruments EURUSD --timeframes H1 \
 
 ---
 
-### M9 — Advanced Position Management ⬜ TODO
+### M9 — Advanced Position Management ✅
 > Enables replicating exit logic typical of trend-following strategies (trailing SL, scale-out, time exit).
-> Extends `PositionManagement` and `StrategyComposer` without breaking existing strategies.
+> All new fields are optional/nullable — fully backward compatible.
 
-- [ ] **ATR-based SL** — add `sl_atr_mult: float | null` to `PositionManagement`: SL computed as
-  `entry_price ± ATR(14) × sl_atr_mult` at trade open (alternative to fixed `sl_pips`)
-- [ ] **Trailing SL** — add `trailing_sl: "atr" | "supertrend" | null` to `PositionManagement`:
-  - `"atr"`: move SL each bar to `price ± ATR × mult` (only in the favourable direction)
-  - `"supertrend"`: SL tracks the active ST line (requires M8)
-- [ ] **Scale-out** — add `scale_out: { trigger_r: float, volume_pct: int } | null`:
-  - Partial close of `volume_pct`% when profit ≥ `trigger_r × initial SL distance`
-  - After scale-out: move remaining SL to breakeven
-- [ ] **Time-based exit** — add `time_exit_bars: int | null`: close if P/L ≤ 0 after N bars
-- [ ] Update Zod schema in `shared/src/strategy.ts` with all new fields (all optional/nullable)
-- [ ] Update `StrategyComposer.next()`: track open-position state (bars elapsed, current SL, scaled flag)
-- [ ] Integration test with a fixture that exercises trailing SL, scale-out, and time exit
-- [ ] Backward compatibility: existing strategies without the new fields continue to work unchanged
+- [x] `ScaleOut` nested model: `trigger_r` (R-multiple) + `volume_pct` (1–99%)
+- [x] `PositionManagement` new fields:
+  - `sl_atr_mult: float | null` — ATR-based SL at entry: `entry - atr × mult`
+  - `trailing_sl: "atr" | "supertrend" | null` — trailing stop type
+  - `trailing_sl_atr_mult: float = 2.0` — multiplier for ATR trailing SL
+  - `scale_out: ScaleOut | null` — partial close at trigger_r × initial risk; moves SL to breakeven
+  - `time_exit_bars: int | null` — close losing trade after N bars
+- [x] `StrategyComposer.next()` extended with per-trade state tracking (`entry_price`, `initial_sl_dist`, `scaled_out`, `bars_in_trade`); all features wired via `backtesting.py` `trade.sl` / `trade.close(portion=)`
+- [x] `_find_indicator_by_type()` helper — looks up first indicator of given type (e.g. `"atr"`, `"supertrend"`)
+- [x] `shared/src/strategy.ts` — `ScaleOutSchema` + `PositionManagementSchema` extended (Zod, all optional)
+- [x] `engine/tests/integration/test_advanced_position.py` — 7 integration tests: ATR SL, trailing ATR, trailing ST, scale-out, time exit, all combined, backward compat
+- [x] **72/72 Python tests passing** (+7) | **64/64 API tests passing**
 
 ### M7 — Claude Code Team: Strategy Development Team ⬜ PLANNED
 > Evolution of Phase 2 skills (single-agent slash commands) into a multi-agent team
