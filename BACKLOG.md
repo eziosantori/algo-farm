@@ -395,11 +395,23 @@ concurrently, reducing the optimisation loop time.
 
 ---
 
-## Phase 4 — Robustness Validation Suite ⬜ TODO
+## Phase 4 — Robustness Validation Suite 🔄 IN PROGRESS
 
-- [ ] M1 — Walk-forward analysis
-- [ ] M2 — Monte Carlo simulation
-- [ ] M3 — Out-of-sample test
+### M1 — Walk-forward analysis ✅
+- [x] `engine/src/robustness/walk_forward.py` — `WalkForwardAnalyzer`: N equal IS/OOS windows, WF efficiency = mean_OOS_sharpe / mean_IS_sharpe
+- [x] `engine/run.py` — `--walk-forward`, `--wf-windows N`, `--wf-train-pct F` flags; emits `{"type": "wf_result", ...}`
+- [x] `engine/tests/unit/test_walk_forward.py` — 9 tests: window creation, coverage, ratio, None efficiency, structure
+
+### M2 — Monte Carlo simulation ✅
+- [x] `engine/src/robustness/monte_carlo.py` — `MonteCarloSimulator`: shuffles trade returns N times, P5/P50/P95 of max_drawdown and final_return
+- [x] `engine/run.py` — `--monte-carlo`, `--mc-runs N` flags; emits `{"type": "mc_result", ...}`
+- [x] `engine/tests/unit/test_monte_carlo.py` — 11 tests: edge cases, ordering, reproducibility, missing keys
+
+### M3 — Out-of-sample test ✅
+- [x] `engine/src/robustness/oos.py` — `OOSValidator`: IS/OOS split, degradation ratio per metric: (oos − is) / |is|
+- [x] `engine/run.py` — `--oos-pct F` flag; emits `{"type": "oos_result", ...}`
+- [x] `engine/tests/unit/test_oos.py` — 9 tests: split proportions, required keys, error handling, degradation
+
 - [ ] M4 — Parameter sensitivity
 - [ ] M5 — Trade shuffle / permutation test
 - [ ] M6 — Composite go/no-go score + report schema

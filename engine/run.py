@@ -21,10 +21,11 @@ from typing import Any
 # Ensure src/ is on the path when run as a script
 sys.path.insert(0, str(Path(__file__).parent))
 
+from src.backtest.runner import BacktestRunner
 from src.models import StrategyDefinition
 from src.optimization.grid_search import GridSearchOptimizer
 from src.storage.db import ErrorLogRepo, JobRepo, RunRepo, init_db
-from src.utils import setup_logging
+from src.utils import load_ohlcv, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--data-dir", dest="data_dir", required=True, help="Root directory for OHLCV Parquet files")
     parser.add_argument("--resume-job", dest="resume_job", default=None, help="Job UUID to resume")
     parser.add_argument("--log-level", dest="log_level", default="INFO", help="Logging level")
+    # Phase 4 — Robustness validation (all optional, disabled by default)
+    parser.add_argument("--oos-pct", dest="oos_pct", type=float, default=0.0,
+                        help="Out-of-sample fraction (0 = disabled, e.g. 0.2 for last 20%%)")
+    parser.add_argument("--walk-forward", dest="walk_forward", action="store_true",
+                        help="Run walk-forward analysis on best params")
+    parser.add_argument("--wf-windows", dest="wf_windows", type=int, default=5,
+                        help="Number of walk-forward windows (default 5)")
+    parser.add_argument("--wf-train-pct", dest="wf_train_pct", type=float, default=0.7,
+                        help="Train fraction per walk-forward window (default 0.7)")
+    parser.add_argument("--monte-carlo", dest="monte_carlo", action="store_true",
+                        help="Run Monte Carlo simulation on best params")
+    parser.add_argument("--mc-runs", dest="mc_runs", type=int, default=1000,
+                        help="Number of Monte Carlo permutation runs (default 1000)")
     return parser.parse_args(argv)
 
 
@@ -174,6 +188,53 @@ def main(argv: list[str] | None = None) -> int:
     if "pareto_front" in result:
         completed_msg["pareto_front"] = result["pareto_front"]
     emit(completed_msg)
+
+    # --- Phase 4: Robustness validation (runs after main optimisation) ---
+    run_robustness = args.oos_pct > 0 or args.walk_forward or args.monte_carlo
+    if run_robustness:
+        best_params = result.get("best_params", {})
+        rb_runner = BacktestRunner()
+        for instrument in instruments:
+            for timeframe in timeframes:
+                try:
+                    ohlcv = load_ohlcv(args.data_dir, instrument, timeframe)
+                except FileNotFoundError as exc:
+                    logger.warning("Robustness: data not found (%s/%s): %s", instrument, timeframe, exc)
+                    continue
+
+                if args.oos_pct > 0:
+                    try:
+                        from src.robustness.oos import OOSValidator
+                        oos_res = OOSValidator(oos_pct=args.oos_pct).validate(ohlcv, definition, best_params)
+                        emit({"type": "oos_result", "job_id": job_id,
+                              "instrument": instrument, "timeframe": timeframe,
+                              "params": best_params, **oos_res})
+                    except Exception as exc:
+                        logger.warning("OOS validation failed (%s/%s): %s", instrument, timeframe, exc)
+
+                if args.walk_forward:
+                    try:
+                        from src.robustness.walk_forward import WalkForwardAnalyzer
+                        wf_res = WalkForwardAnalyzer(
+                            n_windows=args.wf_windows, train_pct=args.wf_train_pct
+                        ).analyze(ohlcv, definition, best_params)
+                        emit({"type": "wf_result", "job_id": job_id,
+                              "instrument": instrument, "timeframe": timeframe,
+                              "params": best_params, **wf_res})
+                    except Exception as exc:
+                        logger.warning("Walk-forward failed (%s/%s): %s", instrument, timeframe, exc)
+
+                if args.monte_carlo:
+                    try:
+                        from src.robustness.monte_carlo import MonteCarloSimulator
+                        full_result = rb_runner.run(ohlcv, definition, best_params)
+                        mc_res = MonteCarloSimulator(n_runs=args.mc_runs).simulate(full_result.trades)
+                        emit({"type": "mc_result", "job_id": job_id,
+                              "instrument": instrument, "timeframe": timeframe,
+                              "params": best_params, **mc_res})
+                    except Exception as exc:
+                        logger.warning("Monte Carlo failed (%s/%s): %s", instrument, timeframe, exc)
+
     return 0
 
 
