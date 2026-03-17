@@ -1,0 +1,28 @@
+{
+  "version": "1",
+  "name": "EMA Crossover RSI Filter",
+  "variant": "basic",
+  "indicators": [
+    { "name": "ema20",  "type": "ema",  "params": { "period": 20 } },
+    { "name": "ema50",  "type": "ema",  "params": { "period": 50 } },
+    { "name": "rsi14",  "type": "rsi",  "params": { "period": 14 } },
+    { "name": "atr14",  "type": "atr",  "params": { "period": 14 } },
+    { "name": "adx14",  "type": "adx",  "params": { "period": 14 } }
+  ],
+  "entry_rules": [
+    { "indicator": "ema20", "condition": "crosses_above", "compare_to": "ema50" },
+    { "indicator": "rsi14", "condition": ">",  "value": 50 },
+    { "indicator": "adx14", "condition": ">",  "value": 20 }
+  ],
+  "exit_rules": [
+    { "indicator": "rsi14", "condition": ">", "value": 75 }
+  ],
+  "position_management": {
+    "size": 0.02,
+    "sl_pips": null,
+    "tp_pips": null,
+    "max_open_trades": 1,
+    "risk_pct": 0.01,
+    "sl_atr_mult": 2.5
+  }
+}

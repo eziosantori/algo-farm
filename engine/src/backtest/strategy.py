@@ -78,6 +78,12 @@ class StrategyComposer:
                     tp: float | None = None
                     if pm.tp_pips:
                         tp = price + pm.tp_pips * 0.0001
+                    elif pm.tp_atr_mult is not None:
+                        atr_ind = _find_indicator_by_type(self_bt, definition, "atr")
+                        if atr_ind is not None:
+                            atr_val = float(atr_ind[-1])
+                            if not np.isnan(atr_val):
+                                tp = price + atr_val * pm.tp_atr_mult
 
                     state["entry_price"] = price
                     state["initial_sl_dist"] = (price - sl) if sl is not None else None

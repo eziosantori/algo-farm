@@ -50,6 +50,7 @@ class PositionManagement(BaseModel):
     # M9 — Advanced Position Management (all optional, backward-compatible)
     risk_pct: float | None = None                               # risk % of equity per trade (e.g. 0.01 = 1%); requires a defined SL
     sl_atr_mult: float | None = None                            # ATR-based SL at entry: entry ± atr × sl_atr_mult
+    tp_atr_mult: float | None = None                            # ATR-based TP at entry: entry + atr × tp_atr_mult
     trailing_sl: Literal["atr", "supertrend"] | None = None    # trailing stop type
     trailing_sl_atr_mult: float = 2.0                          # multiplier for ATR trailing SL
     scale_out: ScaleOut | None = None                          # partial-close config
