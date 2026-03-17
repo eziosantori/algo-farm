@@ -7,14 +7,14 @@ Generate a new trading strategy JSON file from the user's natural language descr
 1. Parse the user's description and design a `StrategyDefinition` that matches their intent.
 
 2. Use ONLY the supported schema:
-   - **Indicators:** `sma`, `ema`, `macd`, `rsi`, `stoch`, `atr`, `bollinger_bands`, `momentum`, `adx`, `cci`, `obv`, `williamsr`
+   - **Indicators:** `sma`, `ema`, `macd`, `rsi`, `stoch`, `atr`, `bollinger_bands`, `momentum`, `adx`, `cci`, `obv`, `williamsr`, `supertrend`, `supertrend_direction`
    - **Conditions:** `>`, `<`, `>=`, `<=`, `crosses_above`, `crosses_below`
    - **Rule format:** `{"indicator": "<name>", "condition": "<cond>", "value": <number>}` OR `{"indicator": "<name>", "condition": "<cond>", "compare_to": "<other_indicator_name>"}`
    - **version:** always `"1"`, **variant:** `"basic"` (default) or `"advanced"`
 
 3. Important constraints:
    - Every indicator referenced in rules MUST be declared in `indicators[]` with a unique `name`
-   - `compare_to` references must match an existing indicator `name`
+   - `compare_to` references must match an existing indicator `name` — `"close"` is NOT valid
    - Multiple entry/exit rules are evaluated with AND logic
    - `value` and `compare_to` are mutually exclusive per rule
 
@@ -24,7 +24,28 @@ Generate a new trading strategy JSON file from the user's natural language descr
 
 6. Save the confirmed file to `engine/strategies/draft/<filename>.json` using the Write tool.
 
-7. After saving, suggest the next step:
+7. **Register the strategy in the API database** so it is visible in the UI:
+
+   ```bash
+   curl -s --max-time 3 http://localhost:3001/health
+   ```
+
+   If the API is reachable, register the strategy:
+   ```bash
+   curl -s -X POST http://localhost:3001/strategies \
+     -H "Content-Type: application/json" \
+     -d '<escaped-strategy-json>'
+   ```
+
+   Extract `id` from the response and print:
+   ```
+   Strategy registered in DB: <id>
+   Use --strategy-id <id> in future /iterate, /optimize, /strategy-lab calls
+   ```
+
+   If the API is not reachable, skip silently (file is saved, register later when API is up).
+
+8. Suggest the next step:
    ```
    Strategy saved. Run a backtest with:
    /backtest engine/strategies/draft/<filename>.json

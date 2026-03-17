@@ -320,6 +320,22 @@ python run.py --strategy my_strategy.json --instruments EURUSD --timeframes H1 \
 
 ---
 
+### M13 — Unified CLI ↔ UI strategy workflow ✅
+> Closes the gap between CLI-created and UI-created strategies. DB is now the single
+> source of truth; skill files sync in both directions.
+
+**Gaps closed:**
+- `/new-strategy`: after writing file, registers strategy in DB via `POST /strategies` → visible in UI immediately
+- `/iterate`: resolves `strategy_id` from DB (by name or `--strategy-id`); creates Lab session with `strategy_id` set; PUTs updated definition to DB after each kept iteration
+- `/strategy-lab`: same — `--strategy-id <uuid>` accepts UI-created strategies; Lab session linked to `strategy_id`; PUT syncs improvements back to DB
+
+**Unified workflows:**
+- CLI → UI: `/new-strategy` → `/iterate` → results in Lab page, strategy in Strategies page
+- UI → CLI: create in Wizard → copy `strategy_id` → `/iterate --strategy-id <uuid>` → results sync back
+- Mixed: start from UI, iterate in CLI, promote in UI — all via the same `strategy_id` thread
+
+---
+
 ### M9 — Advanced Position Management ⬜ TODO
 > Enables replicating exit logic typical of trend-following strategies (trailing SL, scale-out, time exit).
 > Extends `PositionManagement` and `StrategyComposer` without breaking existing strategies.

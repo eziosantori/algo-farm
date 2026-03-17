@@ -4,7 +4,7 @@ variant on all instrument × timeframe combinations, keeps improvements that bea
 and stores all results in the Strategy Lab. Requires minimal user interaction — only final validation.
 
 **Arguments:** $ARGUMENTS
-(format: `<strategy-file> [--instruments EURUSD,XAUUSD,BTCUSD] [--timeframes H1,M15] [--target "sharpe > 0.5"] [--iterations 3] [--constraints "min_sharpe=0.4,max_dd=20"] [--data-dir engine/data] [--api-url http://localhost:3001]`)
+(format: `<strategy-file-or-id> [--strategy-id <uuid>] [--instruments EURUSD,XAUUSD,BTCUSD] [--timeframes H1,M15] [--target "sharpe > 0.5"] [--iterations 3] [--constraints "min_sharpe=0.4,max_dd=20"] [--data-dir engine/data] [--api-url http://localhost:3001]`)
 
 ---
 
@@ -12,7 +12,8 @@ and stores all results in the Strategy Lab. Requires minimal user interaction �
 
 ### Step 1 — Parse arguments
 
-- `strategy-file` (required): path to strategy JSON. Resolve relative names from `engine/strategies/draft/` first, then `engine/tests/fixtures/`.
+- `strategy-file`: path to strategy JSON. Resolve relative names from `engine/strategies/draft/` first, then `engine/tests/fixtures/`. May be omitted if `--strategy-id` is provided.
+- `--strategy-id <uuid>`: UUID of a strategy already saved in the API database. When provided, the strategy is fetched from the API instead of a local file.
 - `--instruments`: comma-separated list, default `EURUSD`
 - `--timeframes`: comma-separated list, default `H1`
 - `--target`: improvement goal, default `"sharpe > 0.5"`. Supported: `sharpe > N`, `return > N`, `win_rate > N`, `drawdown < N`, `pf > N` (profit factor)
@@ -25,29 +26,52 @@ Parse constraints into a JSON object: `{"min_sharpe": 0.4, "max_dd": 20}`.
 
 ### Step 2 — Verify and load
 
-1. Read the strategy JSON with the Read tool. If not found, stop.
-2. Check API:
+1. Check API is reachable (required for strategy-lab):
    ```bash
    curl -s --max-time 3 <api-url>/health
    ```
    If unreachable: tell the user to run `pnpm --filter api dev`, then stop.
+
+2. Load strategy:
+
+   **Case A — `--strategy-id <uuid>` provided:**
+   ```bash
+   curl -s <api-url>/strategies/<uuid>
+   ```
+   Extract the `definition` field. Write it to `engine/strategies/draft/<name>.json`.
+   Set `strategy_id = <uuid>`.
+
+   **Case B — file path provided:**
+   Read the strategy JSON with the Read tool. If not found, stop.
+
+   Then resolve `strategy_id`: call `GET <api-url>/strategies`, filter by `name` matching exactly.
+   - If found: `strategy_id = <id>` (and optionally PUT to sync the file version)
+   - If not found: register now:
+     ```bash
+     curl -s -X POST <api-url>/strategies \
+       -H "Content-Type: application/json" \
+       -d '<escaped-strategy-json>'
+     ```
+     Set `strategy_id` from the returned `id`.
+
 3. Keep the original strategy JSON as `baseline_strategy`. Working copy = `current_strategy` (same content initially).
 
-### Step 3 — Create Lab session
+### Step 3 — Create Lab session linked to the strategy
 
 ```bash
 curl -s -X POST <api-url>/lab/sessions \
   -H "Content-Type: application/json" \
   -d '{
     "strategy_name": "<name>",
-    "strategy_json": "<escaped-json>",
+    "strategy_json": <strategy-json>,
     "instruments": [...],
     "timeframes": [...],
-    "constraints": <obj-or-null>
+    "constraints": <obj-or-null>,
+    "strategy_id": "<strategy_id>"
   }'
 ```
 
-Extract `session_id`. Report: `Lab session: <session_id>`
+Extract `session_id`. Report: `Lab session: <session_id> | Strategy: <strategy_id>`
 
 ### Step 3b — Download missing data
 
@@ -152,6 +176,13 @@ Iter 2/3 | Change: shortened ST period 10 → 7
 ```
 
 POST all candidate results to the Lab session regardless of keep/revert (for traceability).
+
+After each **kept** iteration, sync the updated strategy definition back to the DB:
+```bash
+curl -s -X PUT <api-url>/strategies/<strategy_id> \
+  -H "Content-Type: application/json" \
+  -d '<escaped-updated-strategy-json>'
+```
 
 ### Step 6 — Display final comparison table
 
