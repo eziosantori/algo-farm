@@ -8,7 +8,7 @@ import numpy as np
 from backtesting import Strategy  # type: ignore[import-untyped]
 
 from src.backtest.indicators import IndicatorRegistry
-from src.models import RuleDef, StrategyDefinition
+from src.models import PositionManagement, RuleDef, StrategyDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,8 @@ class StrategyComposer:
                     state["scaled_out"] = False
                     state["bars_in_trade"] = 0
 
-                    self_bt.buy(sl=sl, tp=tp)  # type: ignore[attr-defined]
+                    trade_size = _compute_trade_size(pm, price, sl, float(self_bt.equity))  # type: ignore[attr-defined]
+                    self_bt.buy(size=trade_size, sl=sl, tp=tp)  # type: ignore[attr-defined]
 
             else:
                 if not state["in_trade"]:
@@ -150,6 +151,31 @@ class StrategyComposer:
             (Strategy,),
             {"init": init, "next": next},
         )
+
+
+def _compute_trade_size(
+    pm: PositionManagement,
+    price: float,
+    sl: float | None,
+    equity: float,
+) -> float:
+    """Compute position size to pass to Strategy.buy().
+
+    Risk-based sizing (when ``pm.risk_pct`` is set and a SL is defined):
+      - ``units = (equity × risk_pct) / sl_distance``
+      - Returns an integer-like float representing units of the instrument.
+      - Example: equity=10 000, risk_pct=0.01, SL 20 pips (0.0020)
+        → units = 100 / 0.0020 = 50 000 units.
+
+    Fallback (``pm.risk_pct`` is None, or no SL provided, or sl_distance ≤ 0):
+      - Returns ``pm.size`` as a fractional equity allocation (0 < size < 1).
+      - backtesting.py interprets fractions as "invest size × equity".
+    """
+    if pm.risk_pct is not None and sl is not None:
+        sl_distance = price - sl
+        if sl_distance > 0:
+            return (equity * pm.risk_pct) / sl_distance
+    return pm.size
 
 
 def _get_fn_params(fn: Any) -> set[str]:

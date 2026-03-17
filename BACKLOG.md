@@ -351,7 +351,15 @@ python run.py --strategy my_strategy.json --instruments EURUSD --timeframes H1 \
 - [x] `_find_indicator_by_type()` helper — looks up first indicator of given type (e.g. `"atr"`, `"supertrend"`)
 - [x] `shared/src/strategy.ts` — `ScaleOutSchema` + `PositionManagementSchema` extended (Zod, all optional)
 - [x] `engine/tests/integration/test_advanced_position.py` — 7 integration tests: ATR SL, trailing ATR, trailing ST, scale-out, time exit, all combined, backward compat
-- [x] **72/72 Python tests passing** (+7) | **64/64 API tests passing**
+- [x] `risk_pct: float | null` on `PositionManagement` — risk-based position sizing:
+  `units = (equity × risk_pct) / (price − sl)`. Requires a defined SL (sl_pips or sl_atr_mult);
+  falls back to `size` (fractional equity allocation) when SL is absent or sl_distance ≤ 0.
+- [x] `_compute_trade_size(pm, price, sl, equity)` — pure function, extracted for testability;
+  `buy(size=...)` now always called correctly (fixes previous dead-code bug)
+- [x] `engine/tests/unit/test_position_sizing.py` — 10 unit tests: formula correctness, linear
+  scaling with equity/risk_pct, inverse proportionality with SL width, all edge-case fallbacks
+- [x] `shared/src/strategy.ts` — `risk_pct` added to `PositionManagementSchema` (0 < risk_pct ≤ 1)
+- [x] **82/82 Python tests passing** (+10) | **64/64 API tests passing**
 
 ### M7 — Claude Code Team: Strategy Development Team ⬜ PLANNED
 > Evolution of Phase 2 skills (single-agent slash commands) into a multi-agent team

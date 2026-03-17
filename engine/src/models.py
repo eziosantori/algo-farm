@@ -48,6 +48,7 @@ class PositionManagement(BaseModel):
     tp_pips: float | None = None
     max_open_trades: int = 1
     # M9 — Advanced Position Management (all optional, backward-compatible)
+    risk_pct: float | None = None                               # risk % of equity per trade (e.g. 0.01 = 1%); requires a defined SL
     sl_atr_mult: float | None = None                            # ATR-based SL at entry: entry ± atr × sl_atr_mult
     trailing_sl: Literal["atr", "supertrend"] | None = None    # trailing stop type
     trailing_sl_atr_mult: float = 2.0                          # multiplier for ATR trailing SL

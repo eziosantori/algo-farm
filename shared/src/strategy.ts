@@ -60,6 +60,7 @@ export const PositionManagementSchema = z.object({
   tp_pips: z.number().nullable().optional(),
   max_open_trades: z.number().int().default(1),
   // M9 — Advanced Position Management
+  risk_pct: z.number().positive().max(1).nullable().optional(),
   sl_atr_mult: z.number().positive().nullable().optional(),
   trailing_sl: z.enum(["atr", "supertrend"]).nullable().optional(),
   trailing_sl_atr_mult: z.number().positive().default(2.0),
