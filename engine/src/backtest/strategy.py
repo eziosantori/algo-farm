@@ -174,7 +174,8 @@ def _compute_trade_size(
     if pm.risk_pct is not None and sl is not None:
         sl_distance = price - sl
         if sl_distance > 0:
-            return (equity * pm.risk_pct) / sl_distance
+            units = (equity * pm.risk_pct) / sl_distance
+            return max(1, round(units))  # backtesting.py requires a whole number when size > 1
     return pm.size
 
 
@@ -240,12 +241,14 @@ def _check_condition(strategy: Strategy, rule: RuleDef, current: float) -> bool:
         return current <= target
     if cond == "crosses_above" and rule.compare_to is not None:
         other = getattr(strategy, rule.compare_to, None)
-        if other is None or len(other) < 2:
+        ind_self = getattr(strategy, rule.indicator, None)
+        if other is None or ind_self is None or len(other) < 2 or len(ind_self) < 2:
             return False
-        return float(current) > float(other[-1]) and float(strategy.__dict__.get(rule.indicator, [current, current])[-2] if hasattr(strategy, rule.indicator) else current) <= float(other[-2])  # type: ignore[attr-defined]
+        return float(ind_self[-1]) > float(other[-1]) and float(ind_self[-2]) <= float(other[-2])
     if cond == "crosses_below" and rule.compare_to is not None:
         other = getattr(strategy, rule.compare_to, None)
-        if other is None or len(other) < 2:
+        ind_self = getattr(strategy, rule.indicator, None)
+        if other is None or ind_self is None or len(other) < 2 or len(ind_self) < 2:
             return False
-        return current < float(other[-1])
+        return float(ind_self[-1]) < float(other[-1]) and float(ind_self[-2]) >= float(other[-2])
     return False

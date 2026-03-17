@@ -32,7 +32,12 @@ class BacktestRunner:
         # Relative metrics (Sharpe, return %) are unaffected by the absolute cash level.
         peak_close = float(ohlcv["Close"].max())
         initial_cash = max(10_000, peak_close * 100)
-        bt = Backtest(ohlcv, strategy_cls, cash=initial_cash, commission=0.0002)
+        # Enable 50:1 margin leverage when risk_pct sizing is used; otherwise trades
+        # would require notional > cash (e.g. 83k EURUSD units at $10k equity).
+        pm = definition.position_management
+        margin = 1 / 50 if pm.risk_pct is not None else 1.0
+        bt = Backtest(ohlcv, strategy_cls, cash=initial_cash, commission=0.0002,
+                      margin=margin, finalize_trades=True)
         stats = bt.run()
         trades = self._extract_trades(stats._trades)
         equity = stats._equity_curve["Equity"].tolist()
