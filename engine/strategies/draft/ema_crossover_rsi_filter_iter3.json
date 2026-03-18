@@ -17,7 +17,8 @@
     { "indicator": "adx14", "condition": ">", "value": 20 }
   ],
   "exit_rules": [
-    { "indicator": "rsi14", "condition": ">", "value": 75 }
+    { "indicator": "rsi14", "condition": ">", "value": 75 },
+    { "indicator": "rsi14", "condition": "crosses_below", "value": 45 }
   ],
   "position_management": {
     "size": 0.02,
@@ -26,6 +27,6 @@
     "max_open_trades": 1,
     "risk_pct": 0.01,
     "sl_atr_mult": 3.0,
-    "tp_atr_mult": 3.0
+    "tp_atr_mult": 4.5
   }
 }

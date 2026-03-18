@@ -15,6 +15,10 @@ export interface BacktestJobData {
   populationSize?: number;  // NSGA-II population size (genetic optimizer only)
   fromDate?: string;  // e.g. "2022-01-01" — triggers auto-download if data missing
   toDate?: string;    // e.g. "2024-12-31" — defaults to yesterday
+  // IS/OOS date window passed as --date-from / --date-to to run.py
+  // Defaults: isStart="2022-01-01", isEnd="2023-12-31" (IS); omit both for full range
+  isStart?: string;  // e.g. "2022-01-01"
+  isEnd?: string;    // e.g. "2023-12-31"
 }
 
 export type BacktestJobName = "backtest";

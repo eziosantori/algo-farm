@@ -61,6 +61,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--data-dir", dest="data_dir", required=True, help="Root directory for OHLCV Parquet files")
     parser.add_argument("--resume-job", dest="resume_job", default=None, help="Job UUID to resume")
     parser.add_argument("--log-level", dest="log_level", default="INFO", help="Logging level")
+    # IS/OOS date filtering — applied to OHLCV data before backtest/optimisation
+    parser.add_argument("--date-from", dest="date_from", default=None,
+                        help="Filter data from this date inclusive (YYYY-MM-DD). "
+                             "IS convention: 2022-01-01. OOS convention: 2024-01-01.")
+    parser.add_argument("--date-to", dest="date_to", default=None,
+                        help="Filter data to this date inclusive (YYYY-MM-DD). "
+                             "IS convention: 2023-12-31.")
     # Phase 4 — Robustness validation (all optional, disabled by default)
     parser.add_argument("--oos-pct", dest="oos_pct", type=float, default=0.0,
                         help="Out-of-sample fraction (0 = disabled, e.g. 0.2 for last 20%%)")
@@ -159,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
             skip_sigs=skip_sigs,
             on_progress=emit,
             on_result=emit,
+            date_from=args.date_from,
+            date_to=args.date_to,
         )
     except Exception as exc:
         logger.error("Optimisation failed: %s", exc)
@@ -197,7 +206,8 @@ def main(argv: list[str] | None = None) -> int:
         for instrument in instruments:
             for timeframe in timeframes:
                 try:
-                    ohlcv = load_ohlcv(args.data_dir, instrument, timeframe)
+                    ohlcv = load_ohlcv(args.data_dir, instrument, timeframe,
+                                       args.date_from, args.date_to)
                 except FileNotFoundError as exc:
                     logger.warning("Robustness: data not found (%s/%s): %s", instrument, timeframe, exc)
                     continue

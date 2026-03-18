@@ -22,6 +22,8 @@ const CreateSessionSchema = z.object({
   timeframes: z.array(z.string().min(1)).min(1),
   constraints: z.record(z.number()).nullable().optional(),
   strategy_id: z.string().uuid().optional(),
+  is_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  is_end:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
 
 const AddResultSchema = z.object({
@@ -29,6 +31,7 @@ const AddResultSchema = z.object({
   timeframe: z.string().min(1),
   params_json: z.string().min(1),
   metrics_json: z.string().min(1),
+  split: z.enum(["is", "oos", "full"]).optional(),
 });
 
 const UpdateResultStatusSchema = z.object({
@@ -56,6 +59,9 @@ const RunSessionSchema = z.object({
   population_size: z.number().int().min(4).max(200).optional(),
   from_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // IS window override (defaults handled in worker: 2022-01-01 → 2023-12-31)
+  is_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  is_end:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -182,6 +188,8 @@ router.post(
         populationSize: req.body.population_size as number | undefined,
         fromDate: req.body.from_date as string | undefined,
         toDate: req.body.to_date as string | undefined,
+        isStart: (req.body.is_start ?? session.is_start) as string | undefined,
+        isEnd:   (req.body.is_end   ?? session.is_end)   as string | undefined,
       };
 
       const job = await backtestQueue.add("backtest" as const, jobData);

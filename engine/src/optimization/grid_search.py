@@ -42,6 +42,8 @@ class GridSearchOptimizer:
         skip_sigs: set[str] | None = None,
         on_progress: Callable[[dict[str, Any]], None] | None = None,
         on_result: Callable[[dict[str, Any]], None] | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
     ) -> dict[str, Any]:
         """Run full grid search. Returns best_params and best_metrics."""
         combinations = self.build_combinations(param_grid)
@@ -60,7 +62,7 @@ class GridSearchOptimizer:
         for instrument in instruments:
             for timeframe in timeframes:
                 try:
-                    ohlcv = load_ohlcv(data_dir, instrument, timeframe)
+                    ohlcv = load_ohlcv(data_dir, instrument, timeframe, date_from, date_to)
                 except FileNotFoundError as exc:
                     logger.error("Data not found: %s", exc)
                     error_repo.log(job_id, "DataNotFound", str(exc))

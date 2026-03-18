@@ -245,16 +245,28 @@ def _check_condition(strategy: Strategy, rule: RuleDef, current: float) -> bool:
         return current >= target
     if cond == "<=" and target is not None:
         return current <= target
-    if cond == "crosses_above" and rule.compare_to is not None:
-        other = getattr(strategy, rule.compare_to, None)
+    if cond == "crosses_above":
         ind_self = getattr(strategy, rule.indicator, None)
-        if other is None or ind_self is None or len(other) < 2 or len(ind_self) < 2:
+        if ind_self is None or len(ind_self) < 2:
             return False
-        return float(ind_self[-1]) > float(other[-1]) and float(ind_self[-2]) <= float(other[-2])
-    if cond == "crosses_below" and rule.compare_to is not None:
-        other = getattr(strategy, rule.compare_to, None)
+        if rule.compare_to is not None:
+            other = getattr(strategy, rule.compare_to, None)
+            if other is None or len(other) < 2:
+                return False
+            return float(ind_self[-1]) > float(other[-1]) and float(ind_self[-2]) <= float(other[-2])
+        if rule.value is not None:
+            return float(ind_self[-1]) > rule.value and float(ind_self[-2]) <= rule.value
+        return False
+    if cond == "crosses_below":
         ind_self = getattr(strategy, rule.indicator, None)
-        if other is None or ind_self is None or len(other) < 2 or len(ind_self) < 2:
+        if ind_self is None or len(ind_self) < 2:
             return False
-        return float(ind_self[-1]) < float(other[-1]) and float(ind_self[-2]) >= float(other[-2])
+        if rule.compare_to is not None:
+            other = getattr(strategy, rule.compare_to, None)
+            if other is None or len(other) < 2:
+                return False
+            return float(ind_self[-1]) < float(other[-1]) and float(ind_self[-2]) >= float(other[-2])
+        if rule.value is not None:
+            return float(ind_self[-1]) < rule.value and float(ind_self[-2]) >= rule.value
+        return False
     return False

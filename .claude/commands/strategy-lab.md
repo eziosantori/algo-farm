@@ -4,7 +4,17 @@ variant on all instrument × timeframe combinations, keeps improvements that bea
 and stores all results in the Strategy Lab. Requires minimal user interaction — only final validation.
 
 **Arguments:** $ARGUMENTS
-(format: `<strategy-file-or-id> [--strategy-id <uuid>] [--instruments EURUSD,XAUUSD,BTCUSD] [--timeframes H1,M15] [--target "sharpe > 0.5"] [--iterations 3] [--constraints "min_sharpe=0.4,max_dd=20"] [--data-dir engine/data] [--api-url http://localhost:3001]`)
+(format: `<strategy-file-or-id> [--strategy-id <uuid>] [--instruments EURUSD,XAUUSD,BTCUSD] [--timeframes H1,M15] [--target "sharpe > 0.5"] [--iterations 3] [--constraints "min_sharpe=0.4,max_dd=20"] [--is-end 2023-12-31] [--data-dir engine/data] [--api-url http://localhost:3001]`)
+
+---
+
+## IS/OOS convention
+
+All baseline and iteration backtests run on **in-sample data only** (2022-01-01 → `is_end`).
+The OOS holdout (2024-01-01 onward) is never touched here — run `/robustness` after this skill.
+
+The Lab session stores `is_start` / `is_end` so the UI can show which period was used.
+Results are tagged `split = "is"` in the database.
 
 ---
 
@@ -19,10 +29,12 @@ and stores all results in the Strategy Lab. Requires minimal user interaction �
 - `--target`: improvement goal, default `"sharpe > 0.5"`. Supported: `sharpe > N`, `return > N`, `win_rate > N`, `drawdown < N`, `pf > N` (profit factor)
 - `--iterations`: max improvement iterations after baseline, default `3`
 - `--constraints`: comma-separated `key=value` pairs for final table display (e.g. `min_sharpe=0.4,max_dd=20`)
+- `--is-end`: last day of IS window, default `2023-12-31`
 - `--data-dir`: OHLCV data cache, default `engine/data`
 - `--api-url`: default `http://localhost:3001`
 
 Parse constraints into a JSON object: `{"min_sharpe": 0.4, "max_dd": 20}`.
+Set `is_start = "2022-01-01"`, `is_end = <parsed or default>`.
 
 ### Step 2 — Verify and load
 
@@ -67,11 +79,13 @@ curl -s -X POST <api-url>/lab/sessions \
     "instruments": [...],
     "timeframes": [...],
     "constraints": <obj-or-null>,
-    "strategy_id": "<strategy_id>"
+    "strategy_id": "<strategy_id>",
+    "is_start": "2022-01-01",
+    "is_end": "<is_end>"
   }'
 ```
 
-Extract `session_id`. Report: `Lab session: <session_id> | Strategy: <strategy_id>`
+Extract `session_id`. Report: `Lab session: <session_id> | Strategy: <strategy_id> | IS: 2022-01-01 → <is_end>`
 
 ### Step 3b — Download missing data
 
@@ -83,7 +97,7 @@ source .venv/bin/activate && \
 python download.py \
   --instruments <missing-instruments> \
   --timeframes <missing-timeframes> \
-  --from 2024-01-01 --to $(date +%Y-%m-%d) \
+  --from 2022-01-01 --to 2024-12-31 \
   --data-dir <data-dir>
 ```
 A file is present if `<data-dir>/<INSTRUMENT>/<TIMEFRAME>.parquet` exists.
@@ -102,10 +116,12 @@ python run.py \
   --timeframes <timeframe> \
   --db /tmp/lab_<instrument>_<timeframe>_$(date +%s).db \
   --data-dir <data-dir> \
+  --date-from 2022-01-01 \
+  --date-to <is_end> \
   2>/dev/null
 ```
 
-For each result line (`"type": "result"`): POST to Lab and collect metrics.
+For each result line (`"type": "result"`): POST to Lab with `split = "is"` and collect metrics.
 
 Compute **score** = average of the target metric across all successful pairs (e.g. if target is `sharpe > 0.5`, score = mean Sharpe across all pairs).
 

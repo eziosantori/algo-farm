@@ -26,6 +26,6 @@
     "max_open_trades": 1,
     "risk_pct": 0.01,
     "sl_atr_mult": 3.0,
-    "tp_atr_mult": 3.0
+    "tp_atr_mult": 4.5
   }
 }

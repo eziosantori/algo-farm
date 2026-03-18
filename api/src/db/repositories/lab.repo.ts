@@ -27,6 +27,8 @@ export interface LabSessionRow {
   created_at: string;
   updated_at: string;
   strategy_id?: string | null;
+  is_start?: string | null;
+  is_end?: string | null;
 }
 
 export interface BacktestResultRow {
@@ -38,6 +40,7 @@ export interface BacktestResultRow {
   metrics_json: string;
   status: ResultStatus;
   created_at: string;
+  split: "is" | "oos" | "full";
 }
 
 export interface BacktestMetrics {
@@ -65,6 +68,8 @@ export interface LabSessionSummary {
   created_at: string;
   updated_at: string;
   strategy_id?: string | null;
+  is_start?: string | null;
+  is_end?: string | null;
 }
 
 export interface LabSessionDetail {
@@ -79,6 +84,8 @@ export interface LabSessionDetail {
   created_at: string;
   updated_at: string;
   strategy_id?: string | null;
+  is_start?: string | null;
+  is_end?: string | null;
 }
 
 export interface BacktestResultDetail {
@@ -90,6 +97,7 @@ export interface BacktestResultDetail {
   metrics: BacktestMetrics;
   status: ResultStatus;
   created_at: string;
+  split: "is" | "oos" | "full";
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +116,8 @@ export class LabRepository {
     timeframes: string[];
     constraints?: Record<string, number> | null;
     strategy_id?: string;
+    is_start?: string | null;
+    is_end?: string | null;
   }): { id: string; created_at: string } {
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -115,8 +125,8 @@ export class LabRepository {
     this.db
       .prepare(
         `INSERT INTO lab_sessions
-           (id, strategy_name, strategy_json, instruments, timeframes, constraints, status, created_at, updated_at, strategy_id)
-         VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)`
+           (id, strategy_name, strategy_json, instruments, timeframes, constraints, status, created_at, updated_at, strategy_id, is_start, is_end)
+         VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -127,7 +137,9 @@ export class LabRepository {
         data.constraints ? JSON.stringify(data.constraints) : null,
         now,
         now,
-        data.strategy_id ?? null
+        data.strategy_id ?? null,
+        data.is_start ?? null,
+        data.is_end ?? null
       );
 
     return { id, created_at: now };
@@ -159,6 +171,8 @@ export class LabRepository {
       created_at: r.created_at,
       updated_at: r.updated_at,
       strategy_id: r.strategy_id ?? null,
+      is_start: r.is_start ?? null,
+      is_end: r.is_end ?? null,
     }));
   }
 
@@ -188,6 +202,8 @@ export class LabRepository {
       created_at: row.created_at,
       updated_at: row.updated_at,
       strategy_id: row.strategy_id ?? null,
+      is_start: row.is_start ?? null,
+      is_end: row.is_end ?? null,
     };
   }
 
@@ -207,15 +223,17 @@ export class LabRepository {
     timeframe: string;
     params_json: string;
     metrics_json: string;
+    split?: "is" | "oos" | "full";
   }): { id: string; created_at: string } {
     const id = randomUUID();
     const now = new Date().toISOString();
+    const split = data.split ?? "full";
 
     this.db
       .prepare(
         `INSERT INTO backtest_results
-           (id, session_id, instrument, timeframe, params_json, metrics_json, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`
+           (id, session_id, instrument, timeframe, params_json, metrics_json, status, created_at, split)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
       )
       .run(
         id,
@@ -224,7 +242,8 @@ export class LabRepository {
         data.timeframe,
         data.params_json,
         data.metrics_json,
-        now
+        now,
+        split
       );
 
     // Keep session updated_at in sync
@@ -292,5 +311,6 @@ function parseResultRow(r: BacktestResultRow): BacktestResultDetail {
     metrics: JSON.parse(r.metrics_json) as BacktestMetrics,
     status: r.status,
     created_at: r.created_at,
+    split: r.split ?? "full",
   };
 }

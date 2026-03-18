@@ -1,7 +1,12 @@
 Autonomously improve a trading strategy through repeated backtest → analyze → modify cycles.
 
 **Arguments:** $ARGUMENTS
-(format: `<strategy-file-or-id> [--strategy-id <uuid>] [--target "sharpe > 1.5"] [--iterations 5]`)
+(format: `<strategy-file-or-id> [--strategy-id <uuid>] [--target "sharpe > 1.5"] [--iterations 5] [--is-end 2023-12-31]`)
+
+## IS/OOS convention
+
+All iteration backtests run on **in-sample data only** (2022-01-01 → `is_end`).
+Never touch OOS data (2024-01-01 onward) during iteration — that period is reserved for `/robustness`.
 
 ## Instructions
 
@@ -11,8 +16,9 @@ Autonomously improve a trading strategy through repeated backtest → analyze �
   May be omitted if `--strategy-id` is provided.
 - `--strategy-id <uuid>`: UUID of a strategy already saved in the API database.
   When provided, the strategy is fetched from the API instead of a local file.
-- `--target`: improvement goal, default `"sharpe > 1.0"`. Supported: `sharpe > N`, `return > N`, `win_rate > N`, `drawdown < N`
+- `--target`: improvement goal, default `"sharpe > 0.5"`. Supported: `sharpe > N`, `return > N`, `win_rate > N`, `drawdown < N`
 - `--iterations`: max iterations, default `5`
+- `--is-end`: last day of IS window, default `2023-12-31`
 - `--api-url`: default `http://localhost:3001`
 
 ### Step 2 — Load the strategy
@@ -76,7 +82,7 @@ Extract `session_id`. Print: `Lab session: <session_id>`
 
 ### Step 5 — Iteration loop (1 to N)
 
-#### 5a — Run backtest
+#### 5a — Run backtest (IS data only)
 ```bash
 cd /Users/esantori/git/personal/algo-farm/engine && \
 source .venv/bin/activate && \
@@ -86,6 +92,8 @@ python run.py \
   --timeframes H1 \
   --db /tmp/iterate_<iter>_$(date +%s).db \
   --data-dir data \
+  --date-from 2022-01-01 \
+  --date-to <is_end> \
   2>/dev/null
 ```
 

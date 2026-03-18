@@ -26,6 +26,9 @@ export function initDb(dbPath: string): Database.Database {
   const migrations = [
     `ALTER TABLE strategies ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'draft'`,
     `ALTER TABLE lab_sessions ADD COLUMN strategy_id TEXT REFERENCES strategies(id) ON DELETE SET NULL`,
+    `ALTER TABLE lab_sessions ADD COLUMN is_start TEXT`,
+    `ALTER TABLE lab_sessions ADD COLUMN is_end TEXT`,
+    `ALTER TABLE backtest_results ADD COLUMN split TEXT NOT NULL DEFAULT 'full'`,
   ];
   for (const sql of migrations) {
     try { _db.exec(sql); } catch { /* column already exists */ }

@@ -81,8 +81,10 @@ async function processBacktestJob(job: Job<BacktestJobData>): Promise<void> {
     optimizer = "grid",
     nTrials = 50,
     populationSize = 20,
-    fromDate = "2024-01-01",
+    fromDate = "2022-01-01",
     toDate = yesterday(),
+    isStart,
+    isEnd,
   } = job.data;
 
   const db = getDb();
@@ -127,6 +129,11 @@ async function processBacktestJob(job: Job<BacktestJobData>): Promise<void> {
     writeFileSync(gridPath, JSON.stringify(paramGrid));
     args.push("--param-grid", gridPath);
   }
+
+  // IS/OOS date filtering — defaults to IS window (2022-01-01 → 2023-12-31)
+  const effectiveIsStart = isStart ?? "2022-01-01";
+  const effectiveIsEnd   = isEnd   ?? "2023-12-31";
+  args.push("--date-from", effectiveIsStart, "--date-to", effectiveIsEnd);
 
   try {
     await new Promise<void>((resolve, reject) => {

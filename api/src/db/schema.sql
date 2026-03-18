@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS lab_sessions (
   status TEXT NOT NULL DEFAULT 'running',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  strategy_id TEXT REFERENCES strategies(id) ON DELETE SET NULL
+  strategy_id TEXT REFERENCES strategies(id) ON DELETE SET NULL,
+  -- IS/OOS date window for this session (NULL = full data range used)
+  is_start TEXT,
+  is_end TEXT
 );
 
 CREATE TABLE IF NOT EXISTS backtest_results (
@@ -37,5 +40,7 @@ CREATE TABLE IF NOT EXISTS backtest_results (
   params_json TEXT NOT NULL,
   metrics_json TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  -- 'is' = in-sample, 'oos' = out-of-sample, 'full' = no split applied
+  split TEXT NOT NULL DEFAULT 'full'
 );
