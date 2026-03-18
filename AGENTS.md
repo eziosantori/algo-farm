@@ -16,9 +16,99 @@ autonomously, validates robustness statistically, and exports the result to cTra
 
 ---
 
+## Autonomous Workflow Agent
+
+The `workflow-orchestrator` agent runs the **full strategy development lifecycle autonomously**
+— from baseline backtest to robustness validation — with minimal user interaction.
+It is defined in `.claude/agents/workflow-orchestrator.md` and uses a dedicated
+`strategy-analyst` sub-agent (`.claude/agents/strategy-analyst.md`) for iteration decisions.
+
+### When to use it
+
+Use the workflow agent when you want to go from a draft strategy to `validated` in one shot,
+without manually running `/iterate`, `/optimize`, and `/robustness` sequentially.
+Use the individual skills (below) when you want fine-grained control over a single phase.
+
+### Prerequisites
+
+```bash
+# 1. Start the API (required — agent auto-starts it if unreachable)
+pnpm --filter api dev
+
+# 2. Engine venv must exist
+cd engine && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+
+# 3. Data is downloaded automatically for missing pairs
+```
+
+### Starting a session
+
+Open Claude Code from the project root, then @-mention the agent:
+
+```
+@workflow-orchestrator ema_crossover_rsi_filter_iter3.json \
+  --goal "sharpe > 0.8" \
+  --instruments XAUUSD,GBPUSD,GER40 \
+  --timeframes H1,H4 \
+  --iterations 3
+```
+
+Full option reference:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<strategy-file>` | required | Path or name in `engine/strategies/draft/` |
+| `--goal` | `sharpe > 0.5` | Target: `sharpe > N`, `return > N`, `win_rate > N`, `drawdown < N`, `pf > N` |
+| `--instruments` | `EURUSD` | Comma-separated list |
+| `--timeframes` | `H1` | Comma-separated list |
+| `--iterations` | `3` | Max improvement iterations |
+| `--is-end` | `2023-12-31` | Last day of in-sample window (OOS starts next day) |
+
+### What the agent does automatically
+
+| Phase | What happens | User input needed? |
+|-------|-------------|-------------------|
+| **Prerequisites** | Health check, auto-start API, download missing data, register strategy | No |
+| **1 — Baseline** | IS backtest on all pairs, post results to Lab | No |
+| **2 — Iterate** | Up to N diagnosis → propose → test → keep/revert cycles | No |
+| **3 — Optimize** | Grid search on best variant, apply best params | No |
+| **4 — Robustness** | IS baseline + OOS + Walk-Forward + Monte Carlo, robustness table | **YES — promote or keep?** |
+| **5 — Done** | Mark sessions completed, print final summary | No |
+
+### Human interaction points
+
+The agent pauses **once**, after the robustness report:
+
+```
+Robustness gate: PASS (2/3 pairs)
+...table...
+
+What would you like to do?
+  promote   — move to validated/ and update lifecycle_status
+  keep      — stay in optimizing/ (run /robustness again after tweaks)
+  reject    — archive this variant
+```
+
+Type `promote`, `keep`, or `reject`.
+
+### IS/OOS convention
+
+- **In-sample (IS):** `2022-01-01` → `is_end` (default `2023-12-31`) — all iteration and optimization runs
+- **Out-of-sample (OOS):** `oos_start` (day after `is_end`) → end of available data — touched ONLY in phase 4
+- The OOS holdout is never used during iteration or optimization to prevent data leakage
+
+### Viewing results
+
+All Lab sessions and results are recorded in the API database and visible in the UI:
+
+- Lab sessions: `http://localhost:5173/lab`
+- Strategies: `http://localhost:5173/strategies`
+
+---
+
 ## Quick start for agents — use the skills
 
-Claude Code slash commands are the fastest way to work with strategies.
+Claude Code slash commands are the fastest way to work with strategies **one phase at a time**.
 Run them from the project root (`/Users/esantori/git/personal/algo-farm`).
 
 ### `/new-strategy <description>`
