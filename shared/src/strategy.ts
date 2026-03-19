@@ -96,6 +96,9 @@ export const StrategyDefinitionSchema = z.object({
   entry_rules: z.array(RuleDefSchema),
   exit_rules: z.array(RuleDefSchema),
   position_management: PositionManagementSchema,
+  // Phase C — short-side execution (optional; empty = long-only)
+  entry_rules_short: z.array(RuleDefSchema).optional().default([]),
+  exit_rules_short: z.array(RuleDefSchema).optional().default([]),
 });
 
 export type StrategyDefinition = z.infer<typeof StrategyDefinitionSchema>;

@@ -463,8 +463,32 @@ concurrently, reducing the optimisation loop time.
 - [x] 2 new tests: heterogeneous volume differs from unit-volume OBV, weighted accumulation
 - [x] **161/161 Python tests passing** (+13 new)
 
+---
+
+## FOREX Strategies Integration — Phase B ✅ DONE
+
+> Session-awareness: time-of-day gate + session range indicators.
+> Unlocks partial London Momentum Breakout and Asian Range Fakeout strategies.
+
+### G3 — Trading hours filter ✅
+- [x] `TradingHours` model: `from_time`, `to_time` (UTC 'HH:MM'), `days` (list|None), `force_close`
+- [x] `trading_hours: TradingHours | None` added to `PositionManagement` (backward-compatible)
+- [x] `StrategyComposer.next()`: session gate fires before any entry/exit logic;
+  `force_close=true` closes open position when session ends
+- [x] `_is_within_trading_hours()` helper with overnight session support (from_time > to_time)
+- [x] `shared/src/strategy.ts` — `TradingHoursSchema` + `TradingHours` type; wired into `PositionManagementSchema`
+
+### G5 — Session range indicators ✅
+- [x] `engine/src/backtest/indicators/session.py` — 3 new registered indicators:
+  - `session_active(close, timestamps, from_time, to_time)` → binary 1.0/0.0 per bar
+  - `session_high(close, high, low, timestamps, from_time, to_time)` → rolling session max, carry-forward outside window
+  - `session_low(close, high, low, timestamps, from_time, to_time)` → rolling session min, carry-forward outside window
+- [x] `StrategyComposer.init()` — `timestamps` dispatch: session indicators receive `data.index` as `datetime64[ns]` array
+- [x] `engine/src/models.py` + `shared/src/strategy.ts` — synced with 3 new indicator types
+- [x] `engine/tests/unit/test_session.py` — 22 tests: session_active, session_high, session_low, _is_within_trading_hours, TradingHours model
+- [x] **183/183 Python tests passing** (+22 new)
+
 ### Next phases (planned)
-- Phase B — Session awareness: `trading_hours` filter + `session_high`/`session_low` indicators
 - Phase C — Short-side execution: `entry_rules_short` + `sell()` in StrategyComposer
 
 ---

@@ -26,8 +26,9 @@ class StrategyComposer:
         # Mutable state shared between bars; reset when a trade closes.
         state: dict[str, Any] = {
             "in_trade": False,
+            "direction": None,          # "long" | "short" | None
             "entry_price": 0.0,
-            "initial_sl_dist": None,  # price distance from entry to initial SL
+            "initial_sl_dist": None,    # absolute price distance from entry to initial SL
             "scaled_out": False,
             "bars_in_trade": 0,
         }
@@ -90,14 +91,15 @@ class StrategyComposer:
                 # Detect trade-just-closed (e.g. SL hit internally)
                 if state["in_trade"]:
                     state["in_trade"] = False
+                    state["direction"] = None
                     state["scaled_out"] = False
                     state["bars_in_trade"] = 0
                     state["initial_sl_dist"] = None
 
+                # --- Long entry ---
                 if _evaluate_rules(self_bt, definition.entry_rules):
                     price = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
 
-                    # Determine SL at entry
                     sl: float | None = None
                     if pm.sl_pips:
                         sl = price - pm.sl_pips * 0.0001
@@ -108,7 +110,6 @@ class StrategyComposer:
                             if not np.isnan(atr_val):
                                 sl = price - atr_val * pm.sl_atr_mult
 
-                    # Determine TP at entry
                     tp: float | None = None
                     if pm.tp_pips:
                         tp = price + pm.tp_pips * 0.0001
@@ -120,13 +121,48 @@ class StrategyComposer:
                                 tp = price + atr_val * pm.tp_atr_mult
 
                     state["entry_price"] = price
-                    state["initial_sl_dist"] = (price - sl) if sl is not None else None
+                    state["initial_sl_dist"] = abs(price - sl) if sl is not None else None
                     state["in_trade"] = True
+                    state["direction"] = "long"
                     state["scaled_out"] = False
                     state["bars_in_trade"] = 0
 
                     trade_size = _compute_trade_size(pm, price, sl, float(self_bt.equity))  # type: ignore[attr-defined]
                     self_bt.buy(size=trade_size, sl=sl, tp=tp)  # type: ignore[attr-defined]
+
+                # --- Short entry (only when no long fired this bar) ---
+                elif definition.entry_rules_short and _evaluate_rules(self_bt, definition.entry_rules_short):
+                    price = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
+
+                    sl_short: float | None = None
+                    if pm.sl_pips:
+                        sl_short = price + pm.sl_pips * 0.0001
+                    elif pm.sl_atr_mult is not None:
+                        atr_ind = _find_indicator_by_type(self_bt, definition, "atr")
+                        if atr_ind is not None:
+                            atr_val = float(atr_ind[-1])
+                            if not np.isnan(atr_val):
+                                sl_short = price + atr_val * pm.sl_atr_mult
+
+                    tp_short: float | None = None
+                    if pm.tp_pips:
+                        tp_short = price - pm.tp_pips * 0.0001
+                    elif pm.tp_atr_mult is not None:
+                        atr_ind = _find_indicator_by_type(self_bt, definition, "atr")
+                        if atr_ind is not None:
+                            atr_val = float(atr_ind[-1])
+                            if not np.isnan(atr_val):
+                                tp_short = price - atr_val * pm.tp_atr_mult
+
+                    state["entry_price"] = price
+                    state["initial_sl_dist"] = abs(price - sl_short) if sl_short is not None else None
+                    state["in_trade"] = True
+                    state["direction"] = "short"
+                    state["scaled_out"] = False
+                    state["bars_in_trade"] = 0
+
+                    trade_size = _compute_trade_size(pm, price, sl_short, float(self_bt.equity))  # type: ignore[attr-defined]
+                    self_bt.sell(size=trade_size, sl=sl_short, tp=tp_short)  # type: ignore[attr-defined]
 
             else:
                 if not state["in_trade"]:
@@ -139,6 +175,7 @@ class StrategyComposer:
                 if not trades:
                     return
                 trade = trades[0]
+                is_short = trade.size < 0
 
                 # --- Trailing SL: ATR-based ---
                 if pm.trailing_sl == "atr":
@@ -146,9 +183,15 @@ class StrategyComposer:
                     if atr_ind is not None:
                         atr_val = float(atr_ind[-1])
                         if not np.isnan(atr_val):
-                            new_sl = float(self_bt.data.Close[-1]) - atr_val * pm.trailing_sl_atr_mult  # type: ignore[attr-defined]
-                            if trade.sl is None or new_sl > trade.sl:
-                                trade.sl = new_sl
+                            close_val = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
+                            if is_short:
+                                new_sl = close_val + atr_val * pm.trailing_sl_atr_mult
+                                if trade.sl is None or new_sl < trade.sl:
+                                    trade.sl = new_sl
+                            else:
+                                new_sl = close_val - atr_val * pm.trailing_sl_atr_mult
+                                if trade.sl is None or new_sl > trade.sl:
+                                    trade.sl = new_sl
 
                 # --- Trailing SL: SuperTrend line ---
                 elif pm.trailing_sl == "supertrend":
@@ -156,8 +199,12 @@ class StrategyComposer:
                     if st_ind is not None:
                         st_val = float(st_ind[-1])
                         if not np.isnan(st_val):
-                            if trade.sl is None or st_val > trade.sl:
-                                trade.sl = st_val
+                            if is_short:
+                                if trade.sl is None or st_val < trade.sl:
+                                    trade.sl = st_val
+                            else:
+                                if trade.sl is None or st_val > trade.sl:
+                                    trade.sl = st_val
 
                 # --- Scale-out: partial close at target R-multiple ---
                 if (
@@ -166,11 +213,11 @@ class StrategyComposer:
                     and state["initial_sl_dist"]
                 ):
                     so = pm.scale_out
-                    profit = float(self_bt.data.Close[-1]) - state["entry_price"]  # type: ignore[attr-defined]
+                    close_val = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
+                    profit = (state["entry_price"] - close_val) if is_short else (close_val - state["entry_price"])
                     if profit >= so.trigger_r * state["initial_sl_dist"]:
                         trade.close(portion=so.volume_pct / 100)
                         state["scaled_out"] = True
-                        # Move remaining position SL to breakeven
                         remaining = list(self_bt.trades)  # type: ignore[attr-defined]
                         if remaining:
                             remaining[0].sl = state["entry_price"]
@@ -183,7 +230,12 @@ class StrategyComposer:
                         return
 
                 # --- Rule-based exit ---
-                if _evaluate_rules(self_bt, definition.exit_rules):
+                exit_rules = (
+                    definition.exit_rules_short
+                    if (is_short and definition.exit_rules_short)
+                    else definition.exit_rules
+                )
+                if _evaluate_rules(self_bt, exit_rules):
                     self_bt.position.close()  # type: ignore[attr-defined]
 
         return type(
@@ -212,7 +264,7 @@ def _compute_trade_size(
       - backtesting.py interprets fractions as "invest size × equity".
     """
     if pm.risk_pct is not None and sl is not None:
-        sl_distance = price - sl
+        sl_distance = abs(price - sl)   # works for both long (sl < price) and short (sl > price)
         if sl_distance > 0:
             units = (equity * pm.risk_pct) / sl_distance
             return max(1, round(units))  # backtesting.py requires a whole number when size > 1

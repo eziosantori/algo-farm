@@ -82,6 +82,9 @@ class StrategyDefinition(BaseModel):
     entry_rules: list[RuleDef]
     exit_rules: list[RuleDef]
     position_management: PositionManagement
+    # Phase C — short-side execution (optional; empty = long-only strategy)
+    entry_rules_short: list[RuleDef] = []
+    exit_rules_short: list[RuleDef] = []
 
 
 @dataclass

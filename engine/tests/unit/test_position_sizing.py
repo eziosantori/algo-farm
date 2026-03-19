@@ -88,11 +88,15 @@ def test_fallback_to_size_when_sl_equals_price() -> None:
     assert size == 0.02
 
 
-def test_fallback_to_size_when_sl_above_price() -> None:
-    """Edge case: sl > price (invalid for long) → sl_distance negative → fallback."""
+def test_short_sl_above_price_computes_correctly() -> None:
+    """For short entries sl > price is valid; abs() ensures correct sizing."""
     pm = PositionManagement(size=0.02, risk_pct=0.01)
-    size = _compute_trade_size(pm, 1.1000, 1.1100, 10_000.0)  # sl above entry
-    assert size == 0.02
+    price = 1.1000
+    sl = 1.1100   # 10 pips above entry — correct for a short
+    equity = 10_000.0
+    size = _compute_trade_size(pm, price, sl, equity)
+    # sl_distance = abs(1.1000 - 1.1100) = 0.0100 → units = 100 / 0.0100 = 10_000
+    assert abs(size - 10_000.0) < 1.0
 
 
 def test_fractional_size_is_returned_unchanged() -> None:
