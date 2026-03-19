@@ -31,6 +31,9 @@ class IndicatorDef(BaseModel):
         "session_active",
         "session_high",
         "session_low",
+        # Phase B2 — fakeout indicators
+        "range_fakeout_short",
+        "range_fakeout_long",
     ]
     params: dict[str, Any]
 

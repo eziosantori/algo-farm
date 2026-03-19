@@ -106,6 +106,88 @@ def session_high(
     return result
 
 
+@IndicatorRegistry.register("range_fakeout_short")
+def range_fakeout_short(
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    timestamps: np.ndarray,
+    from_time: str = "00:00",
+    to_time: str = "07:00",
+    lookback_bars: int = 5,
+) -> np.ndarray:
+    """Bearish fakeout signal: price briefly broke above session_high then closed back below.
+
+    Returns 1.0 on bar ``i`` when ALL of:
+    1. Current bar is OUTSIDE the defining session (execution window).
+    2. Within the last ``lookback_bars`` bars, ``close`` went ABOVE ``session_high`` (breakout).
+    3. Current ``close`` is NOW BELOW ``session_high`` (re-entry inside range).
+
+    Parameters
+    ----------
+    from_time:      Session start 'HH:MM' UTC that defines the range.
+    to_time:        Session end   'HH:MM' UTC.
+    lookback_bars:  How many past bars to scan for the initial breakout.
+    """
+    sh = session_high(close, high, low, timestamps, from_time, to_time)
+    result = np.zeros(len(close), dtype=float)
+    from_min = _parse_time(from_time)
+    to_min = _parse_time(to_time)
+
+    for i in range(lookback_bars, len(close)):
+        ts = pd.Timestamp(timestamps[i])
+        if _within_window(_bar_minutes(ts), from_min, to_min):
+            continue
+        if np.isnan(sh[i]) or close[i] >= sh[i]:
+            continue
+        for j in range(i - lookback_bars, i):
+            if not np.isnan(sh[j]) and close[j] > sh[j]:
+                result[i] = 1.0
+                break
+    return result
+
+
+@IndicatorRegistry.register("range_fakeout_long")
+def range_fakeout_long(
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    timestamps: np.ndarray,
+    from_time: str = "00:00",
+    to_time: str = "07:00",
+    lookback_bars: int = 5,
+) -> np.ndarray:
+    """Bullish fakeout signal: price briefly broke below session_low then recovered above.
+
+    Returns 1.0 on bar ``i`` when ALL of:
+    1. Current bar is OUTSIDE the defining session (execution window).
+    2. Within the last ``lookback_bars`` bars, ``close`` went BELOW ``session_low`` (breakdown).
+    3. Current ``close`` is NOW ABOVE ``session_low`` (recovery inside range).
+
+    Parameters
+    ----------
+    from_time:      Session start 'HH:MM' UTC that defines the range.
+    to_time:        Session end   'HH:MM' UTC.
+    lookback_bars:  How many past bars to scan for the initial breakdown.
+    """
+    sl = session_low(close, high, low, timestamps, from_time, to_time)
+    result = np.zeros(len(close), dtype=float)
+    from_min = _parse_time(from_time)
+    to_min = _parse_time(to_time)
+
+    for i in range(lookback_bars, len(close)):
+        ts = pd.Timestamp(timestamps[i])
+        if _within_window(_bar_minutes(ts), from_min, to_min):
+            continue
+        if np.isnan(sl[i]) or close[i] <= sl[i]:
+            continue
+        for j in range(i - lookback_bars, i):
+            if not np.isnan(sl[j]) and close[j] < sl[j]:
+                result[i] = 1.0
+                break
+    return result
+
+
 @IndicatorRegistry.register("session_low")
 def session_low(
     close: np.ndarray,

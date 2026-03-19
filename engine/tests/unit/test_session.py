@@ -6,7 +6,13 @@ import pandas as pd
 import pytest
 
 from src.backtest.indicators import IndicatorRegistry
-from src.backtest.indicators.session import session_active, session_high, session_low
+from src.backtest.indicators.session import (
+    range_fakeout_long,
+    range_fakeout_short,
+    session_active,
+    session_high,
+    session_low,
+)
 from src.backtest.strategy import _is_within_trading_hours
 from src.models import TradingHours
 
@@ -161,6 +167,160 @@ class TestSessionLow:
 
     def test_registered(self) -> None:
         fn = IndicatorRegistry.get("session_low")
+        assert callable(fn)
+
+
+# ---------------------------------------------------------------------------
+# range_fakeout_short
+# ---------------------------------------------------------------------------
+
+class TestRangeFakeoutShort:
+    """Asian session: 00:00–07:00. Execution window: 07:00+."""
+
+    def _make_data(
+        self,
+        session_highs_close: list[float],
+        post_session_close: list[float],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Build arrays where session bars have close == high - 0.1 and post-session bars
+        have the supplied close values.
+
+        Session: 00:00–06:00 (7 bars, indices 0–6).
+        Post-session: 07:00–12:00 (6 bars, indices 7–12).
+        """
+        session_ts = list(pd.date_range("2024-01-03 00:00", periods=7, freq="1h"))
+        post_ts = list(pd.date_range("2024-01-03 07:00", periods=len(post_session_close), freq="1h"))
+        ts = np.array(session_ts + post_ts, dtype="datetime64[ns]")
+
+        n_session = len(session_ts)
+        n_post = len(post_session_close)
+        n = n_session + n_post
+
+        # Session bars: close = supplied values, high = close + 0.1
+        high = np.ones(n) * 2.0
+        low  = np.ones(n) * 0.5
+        close = np.ones(n) * 1.0
+
+        for k, v in enumerate(session_highs_close):
+            close[k] = v
+            high[k] = v + 0.1
+
+        for k, v in enumerate(post_session_close):
+            close[n_session + k] = v
+
+        return close, high, low, ts
+
+    def test_fakeout_detected(self) -> None:
+        # Session high ≈ 2.1 (max high in session bars: close=2.0 → high=2.1)
+        # Post bar 0: close=2.5 (breaks above session_high=2.1) → breakout
+        # Post bar 1: close=1.9 (back below 2.1) → fakeout!
+        close, high, low, ts = self._make_data(
+            session_highs_close=[1.0, 1.5, 2.0, 1.8, 1.6, 1.4, 1.2],
+            post_session_close=[2.5, 1.9, 1.9],
+        )
+        result = range_fakeout_short(
+            close, high, low, ts, from_time="00:00", to_time="07:00", lookback_bars=5
+        )
+        # Index 7 = first post bar (close=2.5, breakout — NOT a fakeout yet)
+        # Index 8 = second post bar (close=1.9, fakeout confirmed)
+        assert result[8] == pytest.approx(1.0)
+
+    def test_no_fakeout_when_price_stays_above(self) -> None:
+        # Price breaks above and stays above — no re-entry
+        close, high, low, ts = self._make_data(
+            session_highs_close=[1.0, 1.5, 2.0, 1.8, 1.6, 1.4, 1.2],
+            post_session_close=[2.5, 2.6, 2.7],
+        )
+        result = range_fakeout_short(
+            close, high, low, ts, from_time="00:00", to_time="07:00", lookback_bars=5
+        )
+        assert np.all(result == 0.0)
+
+    def test_no_fakeout_when_no_breakout_in_window(self) -> None:
+        # Price is below session_high throughout — never broke above
+        close, high, low, ts = self._make_data(
+            session_highs_close=[1.0, 1.5, 2.0, 1.8, 1.6, 1.4, 1.2],
+            post_session_close=[1.8, 1.7, 1.6],  # always below session_high ~2.1
+        )
+        result = range_fakeout_short(
+            close, high, low, ts, from_time="00:00", to_time="07:00", lookback_bars=5
+        )
+        assert np.all(result == 0.0)
+
+    def test_zero_during_session(self) -> None:
+        # Fakeout indicator must be 0 during the defining session itself
+        close, high, low, ts = self._make_data(
+            session_highs_close=[1.0, 1.5, 2.0, 1.8, 1.6, 1.4, 1.2],
+            post_session_close=[2.5, 1.9],
+        )
+        result = range_fakeout_short(
+            close, high, low, ts, from_time="00:00", to_time="07:00", lookback_bars=5
+        )
+        # Session indices 0–6 must all be 0
+        assert np.all(result[:7] == 0.0)
+
+    def test_registered(self) -> None:
+        fn = IndicatorRegistry.get("range_fakeout_short")
+        assert callable(fn)
+
+
+# ---------------------------------------------------------------------------
+# range_fakeout_long
+# ---------------------------------------------------------------------------
+
+class TestRangeFakeoutLong:
+    """Mirror of TestRangeFakeoutShort for bullish fakeout."""
+
+    def _make_data(
+        self,
+        session_lows_close: list[float],
+        post_session_close: list[float],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        session_ts = list(pd.date_range("2024-01-03 00:00", periods=7, freq="1h"))
+        post_ts = list(pd.date_range("2024-01-03 07:00", periods=len(post_session_close), freq="1h"))
+        ts = np.array(session_ts + post_ts, dtype="datetime64[ns]")
+
+        n_session = len(session_ts)
+        n = n_session + len(post_session_close)
+
+        high = np.ones(n) * 2.0
+        low  = np.ones(n) * 1.0
+        close = np.ones(n) * 1.5
+
+        for k, v in enumerate(session_lows_close):
+            close[k] = v
+            low[k] = v - 0.1  # session low ≈ min(close) - 0.1
+
+        for k, v in enumerate(post_session_close):
+            close[n_session + k] = v
+
+        return close, high, low, ts
+
+    def test_fakeout_detected(self) -> None:
+        # Session low ≈ 0.9 (min low among session bars: close=1.0 → low=0.9)
+        # Post bar 0: close=0.7 (breaks below session_low) → breakdown
+        # Post bar 1: close=1.1 (recovers above session_low=0.9) → bullish fakeout!
+        close, high, low, ts = self._make_data(
+            session_lows_close=[1.5, 1.2, 1.0, 1.1, 1.3, 1.4, 1.5],
+            post_session_close=[0.7, 1.1, 1.1],
+        )
+        result = range_fakeout_long(
+            close, high, low, ts, from_time="00:00", to_time="07:00", lookback_bars=5
+        )
+        assert result[8] == pytest.approx(1.0)
+
+    def test_no_fakeout_when_price_stays_below(self) -> None:
+        close, high, low, ts = self._make_data(
+            session_lows_close=[1.5, 1.2, 1.0, 1.1, 1.3, 1.4, 1.5],
+            post_session_close=[0.7, 0.6, 0.5],
+        )
+        result = range_fakeout_long(
+            close, high, low, ts, from_time="00:00", to_time="07:00", lookback_bars=5
+        )
+        assert np.all(result == 0.0)
+
+    def test_registered(self) -> None:
+        fn = IndicatorRegistry.get("range_fakeout_long")
         assert callable(fn)
 
 

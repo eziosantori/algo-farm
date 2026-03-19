@@ -22,6 +22,9 @@ export const IndicatorTypeSchema = z.enum([
   "session_active",
   "session_high",
   "session_low",
+  // Phase B2 — fakeout indicators
+  "range_fakeout_short",
+  "range_fakeout_long",
 ]);
 
 export type IndicatorType = z.infer<typeof IndicatorTypeSchema>;

@@ -23,16 +23,8 @@
       "Bash(pytest tests:*)",
       "Bash(python3 -c \":*)",
       "Bash(echo \"exit:$?\")",
-      "Bash(python run.py --strategy strategies/draft/ema_crossover_rsi_filter.json --instruments EURUSD --timeframes H1 --db /tmp/test_fix.db --data-dir data)",
-      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); strats=[s for s in data if s[''''name'''']==''''EMA Trend RSI Momentum'''']; print\\(json.dumps\\(strats\\)\\)\")",
-      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(type\\(data\\)\\); print\\(str\\(data\\)[:300]\\)\")",
-      "Bash(python3 -c \"from engine.src.data.instruments import INSTRUMENTS; print\\([i for i in INSTRUMENTS if ''BTC'' in i or ''ETH'' in i or ''NAS'' in i]\\)\")",
-      "Bash(python -m pytest tests/ -q)",
-      "Bash(python run.py --strategy strategies/draft/ema_crossover_rsi_filter_iter3.json --instruments XAUUSD --timeframes H4 --db /tmp/is_test.db --data-dir data --date-from 2022-01-01 --date-to 2023-12-31)",
-      "Bash(python run.py --strategy strategies/draft/ema_crossover_rsi_filter_iter3.json --instruments XAUUSD --timeframes H4 --db /tmp/oos_test.db --data-dir data --date-from 2024-01-01)",
-      "Bash(git add:*)",
-      "Bash(python -m pytest tests/unit/test_indicators.py -v)",
-      "Bash(python -m pytest tests -q)"
+      "Bash(python -m pytest tests -q)",
+      "Bash(python run.py --strategy strategies/*)"
     ]
   }
 }
