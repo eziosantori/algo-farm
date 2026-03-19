@@ -92,6 +92,23 @@ export interface BacktestMetrics {
   expectancy: number;
 }
 
+export type ResultSplit =
+  | "is" | "oos" | "full"
+  | "robustness_score" | "wf" | "mc" | "sensitivity" | "permutation";
+
+export interface RobustnessComponentScore {
+  score: number | null;
+  weight: number;
+  effective_weight: number;
+}
+
+export interface RobustnessScoreData {
+  composite_score: number | null;
+  grade: "A" | "B" | "C" | "F" | null;
+  go_nogo: "GO" | "NO-GO" | null;
+  components: Record<string, RobustnessComponentScore>;
+}
+
 export interface BacktestResultDetail {
   id: string;
   session_id: string;
@@ -100,6 +117,7 @@ export interface BacktestResultDetail {
   params: Record<string, unknown>;
   metrics: BacktestMetrics;
   status: ResultStatus;
+  split: ResultSplit;
   created_at: string;
 }
 

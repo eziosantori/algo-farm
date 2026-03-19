@@ -40,7 +40,7 @@ export interface BacktestResultRow {
   metrics_json: string;
   status: ResultStatus;
   created_at: string;
-  split: "is" | "oos" | "full";
+  split: "is" | "oos" | "full" | "robustness_score" | "wf" | "mc" | "sensitivity" | "permutation";
 }
 
 export interface BacktestMetrics {
@@ -97,7 +97,7 @@ export interface BacktestResultDetail {
   metrics: BacktestMetrics;
   status: ResultStatus;
   created_at: string;
-  split: "is" | "oos" | "full";
+  split: "is" | "oos" | "full" | "robustness_score" | "wf" | "mc" | "sensitivity" | "permutation";
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +223,7 @@ export class LabRepository {
     timeframe: string;
     params_json: string;
     metrics_json: string;
-    split?: "is" | "oos" | "full";
+    split?: "is" | "oos" | "full" | "robustness_score" | "wf" | "mc" | "sensitivity" | "permutation";
   }): { id: string; created_at: string } {
     const id = randomUUID();
     const now = new Date().toISOString();

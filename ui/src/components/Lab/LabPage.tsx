@@ -8,6 +8,7 @@ import {
   type LabSessionDetail,
   type BacktestResultDetail,
   type ResultStatus,
+  type RobustnessScoreData,
 } from "../../api/client.ts";
 
 // ---------------------------------------------------------------------------
@@ -207,7 +208,10 @@ interface SessionDetailProps {
 function SessionDetail({ session, onStatusChange }: SessionDetailProps) {
   const { results, constraints } = session;
 
-  const chartData = results.map((r) => ({
+  const robustnessResults = results.filter((r) => r.split === "robustness_score");
+  const backTestResults = results.filter((r) => r.split !== "robustness_score");
+
+  const chartData = backTestResults.map((r) => ({
     name: `${r.instrument} ${r.timeframe}`,
     Sharpe: parseFloat(r.metrics.sharpe_ratio.toFixed(3)),
     "Profit Factor": parseFloat(r.metrics.profit_factor.toFixed(3)),
@@ -226,7 +230,12 @@ function SessionDetail({ session, onStatusChange }: SessionDetailProps) {
         </p>
       )}
 
-      {results.length === 0 ? (
+      {/* Robustness report — shown when robustness_score results exist */}
+      {robustnessResults.length > 0 && (
+        <RobustnessReport results={robustnessResults} />
+      )}
+
+      {backTestResults.length === 0 ? (
         <p className="text-sm text-gray-400">No results yet.</p>
       ) : (
         <>
@@ -261,7 +270,7 @@ function SessionDetail({ session, onStatusChange }: SessionDetailProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                {results.map((r) => (
+                {backTestResults.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                     <td className="px-3 py-2.5 font-mono font-semibold text-gray-900 dark:text-white">{r.instrument}</td>
                     <td className="px-3 py-2.5 font-mono text-gray-500 dark:text-gray-400">{r.timeframe}</td>
@@ -287,6 +296,121 @@ function SessionDetail({ session, onStatusChange }: SessionDetailProps) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RobustnessReport
+// ---------------------------------------------------------------------------
+
+const COMPONENT_LABELS: Record<string, string> = {
+  oos_retention:  "OOS Retention",
+  wf_efficiency:  "WF Efficiency",
+  mc_p5_sharpe:   "MC P5 Sharpe",
+  sensitivity:    "Param Stability",
+  permutation:    "Permutation p",
+};
+
+function scoreColor(score: number) {
+  if (score >= 80) return "text-emerald-600 dark:text-emerald-400";
+  if (score >= 65) return "text-blue-600 dark:text-blue-400";
+  if (score >= 50) return "text-amber-600 dark:text-amber-400";
+  return "text-red-500 dark:text-red-400";
+}
+
+function scoreBg(score: number) {
+  if (score >= 80) return "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800";
+  if (score >= 65) return "bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-800";
+  if (score >= 50) return "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800";
+  return "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800";
+}
+
+function RobustnessReport({ results }: { results: BacktestResultDetail[] }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Robustness Report</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {results.map((r) => {
+          const data = r.metrics as unknown as RobustnessScoreData;
+          const score = data.composite_score;
+          if (score === null || score === undefined) return null;
+          return (
+            <div key={r.id} className={`rounded-xl border p-4 ${scoreBg(score)}`}>
+              {/* Header row */}
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="font-mono text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    {r.instrument} <span className="text-gray-400">{r.timeframe}</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                    data.go_nogo === "GO"
+                      ? "bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-700"
+                      : "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700"
+                  }`}>
+                    {data.go_nogo}
+                  </span>
+                </div>
+              </div>
+
+              {/* Score + grade */}
+              <div className="mt-3 flex items-end gap-2">
+                <span className={`text-4xl font-bold tabular-nums leading-none ${scoreColor(score)}`}>
+                  {score.toFixed(0)}
+                </span>
+                <span className={`mb-0.5 text-xl font-semibold ${scoreColor(score)}`}>
+                  / 100
+                </span>
+                <span className={`mb-0.5 ml-1 text-lg font-bold ${scoreColor(score)}`}>
+                  · {data.grade}
+                </span>
+              </div>
+
+              {/* Score bar */}
+              <div className="mt-2 h-1.5 rounded-full bg-gray-200 dark:bg-gray-700">
+                <div
+                  className={`h-1.5 rounded-full transition-all ${
+                    score >= 80 ? "bg-emerald-500" : score >= 65 ? "bg-blue-500" : score >= 50 ? "bg-amber-500" : "bg-red-500"
+                  }`}
+                  style={{ width: `${score}%` }}
+                />
+              </div>
+
+              {/* Component breakdown */}
+              {data.components && (
+                <div className="mt-3 space-y-1">
+                  {Object.entries(data.components).map(([key, comp]) => (
+                    comp.score !== null && (
+                      <div key={key} className="flex items-center justify-between text-xs">
+                        <span className="text-gray-500 dark:text-gray-400">
+                          {COMPONENT_LABELS[key] ?? key}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-1 rounded-full bg-gray-200 dark:bg-gray-700">
+                            <div
+                              className={`h-1 rounded-full ${comp.score >= 65 ? "bg-emerald-400" : comp.score >= 40 ? "bg-amber-400" : "bg-red-400"}`}
+                              style={{ width: `${comp.score}%` }}
+                            />
+                          </div>
+                          <span className={`font-mono font-semibold w-8 text-right ${
+                            comp.score >= 65 ? "text-emerald-600 dark:text-emerald-400"
+                            : comp.score >= 40 ? "text-amber-600 dark:text-amber-400"
+                            : "text-red-500 dark:text-red-400"
+                          }`}>
+                            {comp.score.toFixed(0)}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

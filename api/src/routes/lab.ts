@@ -31,7 +31,7 @@ const AddResultSchema = z.object({
   timeframe: z.string().min(1),
   params_json: z.string().min(1),
   metrics_json: z.string().min(1),
-  split: z.enum(["is", "oos", "full"]).optional(),
+  split: z.enum(["is", "oos", "full", "robustness_score", "wf", "mc", "sensitivity", "permutation"]).optional(),
 });
 
 const UpdateResultStatusSchema = z.object({

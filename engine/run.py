@@ -81,6 +81,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Run Monte Carlo simulation on best params")
     parser.add_argument("--mc-runs", dest="mc_runs", type=int, default=1000,
                         help="Number of Monte Carlo permutation runs (default 1000)")
+    parser.add_argument("--param-sensitivity", dest="param_sensitivity", action="store_true",
+                        help="Run parameter sensitivity analysis (±10/20%% variations)")
+    parser.add_argument("--permutation-test", dest="permutation_test", action="store_true",
+                        help="Run permutation significance test on best params")
+    parser.add_argument("--permutation-runs", dest="permutation_runs", type=int, default=1000,
+                        help="Number of permutation test runs (default 1000)")
     return parser.parse_args(argv)
 
 
@@ -199,7 +205,13 @@ def main(argv: list[str] | None = None) -> int:
     emit(completed_msg)
 
     # --- Phase 4: Robustness validation (runs after main optimisation) ---
-    run_robustness = args.oos_pct > 0 or args.walk_forward or args.monte_carlo
+    run_robustness = (
+        args.oos_pct > 0
+        or args.walk_forward
+        or args.monte_carlo
+        or args.param_sensitivity
+        or args.permutation_test
+    )
     if run_robustness:
         best_params = result.get("best_params", {})
         rb_runner = BacktestRunner()
@@ -212,6 +224,14 @@ def main(argv: list[str] | None = None) -> int:
                     logger.warning("Robustness: data not found (%s/%s): %s", instrument, timeframe, exc)
                     continue
 
+                # Signals collected for composite scorer
+                oos_sharpe: float | None = None
+                is_sharpe: float | None = None
+                wf_efficiency: float | None = None
+                mc_p5_sharpe: float | None = None
+                overall_stability: float | None = None
+                permutation_p_value: float | None = None
+
                 if args.oos_pct > 0:
                     try:
                         from src.robustness.oos import OOSValidator
@@ -219,6 +239,8 @@ def main(argv: list[str] | None = None) -> int:
                         emit({"type": "oos_result", "job_id": job_id,
                               "instrument": instrument, "timeframe": timeframe,
                               "params": best_params, **oos_res})
+                        oos_sharpe = oos_res["oos_metrics"].get("sharpe_ratio")
+                        is_sharpe = oos_res["is_metrics"].get("sharpe_ratio")
                     except Exception as exc:
                         logger.warning("OOS validation failed (%s/%s): %s", instrument, timeframe, exc)
 
@@ -231,19 +253,68 @@ def main(argv: list[str] | None = None) -> int:
                         emit({"type": "wf_result", "job_id": job_id,
                               "instrument": instrument, "timeframe": timeframe,
                               "params": best_params, **wf_res})
+                        wf_efficiency = wf_res.get("wf_efficiency")
                     except Exception as exc:
                         logger.warning("Walk-forward failed (%s/%s): %s", instrument, timeframe, exc)
 
-                if args.monte_carlo:
+                if args.monte_carlo or args.permutation_test:
                     try:
-                        from src.robustness.monte_carlo import MonteCarloSimulator
                         full_result = rb_runner.run(ohlcv, definition, best_params)
-                        mc_res = MonteCarloSimulator(n_runs=args.mc_runs).simulate(full_result.trades)
-                        emit({"type": "mc_result", "job_id": job_id,
-                              "instrument": instrument, "timeframe": timeframe,
-                              "params": best_params, **mc_res})
+                        trades = full_result.trades
+
+                        if args.monte_carlo:
+                            from src.robustness.monte_carlo import MonteCarloSimulator
+                            mc_res = MonteCarloSimulator(n_runs=args.mc_runs).simulate(trades)
+                            emit({"type": "mc_result", "job_id": job_id,
+                                  "instrument": instrument, "timeframe": timeframe,
+                                  "params": best_params, **mc_res})
+                            # Derive a Sharpe-like signal: use P5 return as proxy
+                            # (MC doesn't compute Sharpe directly; use return_p5 mapped)
+                            mc_p5_sharpe = mc_res.get("return_p5")
+
+                        if args.permutation_test:
+                            from src.robustness.permutation import PermutationTest
+                            perm_res = PermutationTest(n_runs=args.permutation_runs).test(trades)
+                            emit({"type": "permutation_result", "job_id": job_id,
+                                  "instrument": instrument, "timeframe": timeframe,
+                                  "params": best_params, **perm_res})
+                            permutation_p_value = perm_res.get("p_value")
+
                     except Exception as exc:
-                        logger.warning("Monte Carlo failed (%s/%s): %s", instrument, timeframe, exc)
+                        logger.warning("MC/permutation failed (%s/%s): %s", instrument, timeframe, exc)
+
+                if args.param_sensitivity:
+                    try:
+                        from src.robustness.sensitivity import ParameterSensitivityAnalyzer
+                        sens_res = ParameterSensitivityAnalyzer().analyze(ohlcv, definition, best_params)
+                        emit({"type": "sensitivity_result", "job_id": job_id,
+                              "instrument": instrument, "timeframe": timeframe,
+                              "params": best_params, **sens_res})
+                        overall_stability = sens_res.get("overall_stability")
+                        # Use base_sharpe from sensitivity as IS sharpe when oos_pct not used
+                        if is_sharpe is None:
+                            is_sharpe = sens_res.get("base_sharpe")
+                    except Exception as exc:
+                        logger.warning("Parameter sensitivity failed (%s/%s): %s", instrument, timeframe, exc)
+
+                # Emit composite robustness score when at least one signal is available
+                signals_available = any(v is not None for v in [
+                    oos_sharpe, wf_efficiency, mc_p5_sharpe,
+                    overall_stability, permutation_p_value,
+                ])
+                if signals_available:
+                    from src.robustness.scorer import RobustnessScorer
+                    score_res = RobustnessScorer().score(
+                        oos_sharpe=oos_sharpe,
+                        is_sharpe=is_sharpe,
+                        wf_efficiency=wf_efficiency,
+                        mc_p5_sharpe=mc_p5_sharpe,
+                        overall_stability=overall_stability,
+                        permutation_p_value=permutation_p_value,
+                    )
+                    emit({"type": "robustness_score", "job_id": job_id,
+                          "instrument": instrument, "timeframe": timeframe,
+                          "params": best_params, **score_res})
 
     return 0
 
