@@ -412,10 +412,33 @@ concurrently, reducing the optimisation loop time.
 - [x] `engine/run.py` — `--oos-pct F` flag; emits `{"type": "oos_result", ...}`
 - [x] `engine/tests/unit/test_oos.py` — 9 tests: split proportions, required keys, error handling, degradation
 
-- [ ] M4 — Parameter sensitivity
-- [ ] M5 — Trade shuffle / permutation test
-- [ ] M6 — Composite go/no-go score + report schema
-- [ ] M7 — React report display
+### M4 — Parameter Sensitivity ✅
+- [x] `engine/src/robustness/sensitivity.py` — `ParameterSensitivityAnalyzer`: varies each numeric
+  indicator param ±10/20%, measures Sharpe change per variation, per-param stability score (0–1).
+  `overall_stability = mean(per_param_stability)`. `--param-sensitivity` flag, emits `sensitivity_result`.
+- [x] `engine/tests/unit/test_sensitivity.py` — 10 tests
+
+### M5 — Trade Shuffle / Permutation Test ✅
+- [x] `engine/src/robustness/permutation.py` — `PermutationTest`: shuffles trade return sequence
+  N times, computes p-value = P(shuffled_sharpe >= actual_sharpe). `significant = p_value < 0.05`.
+  `--permutation-test` + `--permutation-runs` flags, emits `permutation_result`.
+- [x] `engine/tests/unit/test_permutation.py` — 11 tests
+
+### M6 — Composite Go/No-Go Score ✅
+- [x] `engine/src/robustness/scorer.py` — `RobustnessScorer`: aggregates 5 signals with fixed weights
+  (OOS 35%, WF 25%, MC P5 20%, sensitivity 10%, permutation 10%) into a 0–100 score.
+  Grade A/B/C/F, GO/NO-GO (≥ 60 = GO). Missing signals excluded and weights renormalised.
+  Auto-emitted as `robustness_score` JSONL when any signal is available for a pair.
+- [x] `engine/tests/unit/test_scorer.py` — 15 tests
+
+### M7 — React Robustness Report ✅
+- [x] `ui/src/components/Lab/LabPage.tsx` — `RobustnessReport` component: per-pair score cards with
+  composite score (large number), grade, GO/NO-GO badge, score progress bar, component mini-bars.
+  Appears in Lab session detail when `split = "robustness_score"` results are present.
+- [x] `ui/src/api/client.ts` — `RobustnessScoreData` interface, extended `ResultSplit` union type,
+  added `split` field to `BacktestResultDetail`.
+- [x] API: extended `split` enum to accept `robustness_score | wf | mc | sensitivity | permutation`.
+- [x] **148/148 Python tests passing** (+36 new) | **64/64 API tests passing**
 
 ---
 
