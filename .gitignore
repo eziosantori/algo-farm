@@ -38,3 +38,4 @@ Thumbs.db
 .idea/
 engine/data/
 engine/strategies/**/*.json
+docs/ideas/
