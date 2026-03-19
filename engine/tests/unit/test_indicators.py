@@ -302,6 +302,7 @@ def test_all_required_indicators_registered() -> None:
         "bollinger_bands", "bollinger_upper", "bollinger_lower", "bollinger_basis",
         "momentum", "adx", "cci", "obv", "williamsr",
         "supertrend", "supertrend_direction",
+        "session_active", "session_high", "session_low",
     }
     registered = set(IndicatorRegistry.list_all())
     # momentum is listed in the plan but maps to an alias — accept missing for now

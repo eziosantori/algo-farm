@@ -18,6 +18,10 @@ export const IndicatorTypeSchema = z.enum([
   "williamsr",
   "supertrend",
   "supertrend_direction",
+  // Phase B — session indicators
+  "session_active",
+  "session_high",
+  "session_low",
 ]);
 
 export type IndicatorType = z.infer<typeof IndicatorTypeSchema>;
@@ -50,6 +54,15 @@ export const RuleDefSchema = z.object({
 
 export type RuleDef = z.infer<typeof RuleDefSchema>;
 
+export const TradingHoursSchema = z.object({
+  from_time: z.string().regex(/^\d{2}:\d{2}$/).default("00:00"),
+  to_time: z.string().regex(/^\d{2}:\d{2}$/).default("23:59"),
+  days: z.array(z.number().int().min(0).max(6)).nullable().optional(),
+  force_close: z.boolean().default(false),
+});
+
+export type TradingHours = z.infer<typeof TradingHoursSchema>;
+
 export const ScaleOutSchema = z.object({
   trigger_r: z.number().positive().default(1.5),
   volume_pct: z.number().int().min(1).max(99).default(50),
@@ -70,6 +83,7 @@ export const PositionManagementSchema = z.object({
   trailing_sl_atr_mult: z.number().positive().default(2.0),
   scale_out: ScaleOutSchema.nullable().optional(),
   time_exit_bars: z.number().int().positive().nullable().optional(),
+  trading_hours: TradingHoursSchema.nullable().optional(),
 });
 
 export type PositionManagement = z.infer<typeof PositionManagementSchema>;

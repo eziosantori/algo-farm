@@ -5,10 +5,11 @@ import logging
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from backtesting import Strategy  # type: ignore[import-untyped]
 
 from src.backtest.indicators import IndicatorRegistry
-from src.models import PositionManagement, RuleDef, StrategyDefinition
+from src.models import PositionManagement, RuleDef, StrategyDefinition, TradingHours
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,21 @@ class StrategyComposer:
                 merged = {**ind_def.params, **params}
                 fn_param_names = _get_fn_params(fn)
                 ind_params = {k: v for k, v in merged.items() if k in fn_param_names}
-                if "high" in fn_param_names and "low" in fn_param_names:
+                if "timestamps" in fn_param_names:
+                    # Session indicators — pass timestamps as a positional array
+                    timestamps = np.array(self_bt.data.index, dtype="datetime64[ns]")  # type: ignore[attr-defined]
+                    if "high" in fn_param_names and "low" in fn_param_names:
+                        indicator = self_bt.I(  # type: ignore[attr-defined]
+                            fn,
+                            self_bt.data.Close,
+                            self_bt.data.High,
+                            self_bt.data.Low,
+                            timestamps,
+                            **ind_params,
+                        )
+                    else:
+                        indicator = self_bt.I(fn, self_bt.data.Close, timestamps, **ind_params)  # type: ignore[attr-defined]
+                elif "high" in fn_param_names and "low" in fn_param_names:
                     indicator = self_bt.I(  # type: ignore[attr-defined]
                         fn,
                         self_bt.data.Close,
@@ -58,6 +73,18 @@ class StrategyComposer:
 
         def next(self_bt: Strategy) -> None:  # type: ignore[type-arg]
             pm = definition.position_management
+
+            # --- Session gate: respect trading_hours before any other logic ---
+            if pm.trading_hours is not None:
+                bar_dt = self_bt.data.index[-1]  # type: ignore[attr-defined]
+                if not _is_within_trading_hours(bar_dt, pm.trading_hours):
+                    if pm.trading_hours.force_close and self_bt.position:  # type: ignore[attr-defined]
+                        self_bt.position.close()  # type: ignore[attr-defined]
+                        state["in_trade"] = False
+                        state["scaled_out"] = False
+                        state["bars_in_trade"] = 0
+                        state["initial_sl_dist"] = None
+                    return
 
             if not self_bt.position:  # type: ignore[attr-defined]
                 # Detect trade-just-closed (e.g. SL hit internally)
@@ -277,3 +304,26 @@ def _check_condition(strategy: Strategy, rule: RuleDef, current: float) -> bool:
             return float(ind_self[-1]) < rule.value and float(ind_self[-2]) >= rule.value
         return False
     return False
+
+
+def _is_within_trading_hours(bar_dt: Any, th: TradingHours) -> bool:
+    """Return True if bar_dt falls inside the configured trading hours window.
+
+    Handles overnight sessions (from_time > to_time, e.g. 22:00–06:00).
+    Weekends (Saturday/Sunday) are always outside unless explicitly included in ``days``.
+    """
+    ts = pd.Timestamp(bar_dt)
+
+    # Day-of-week check
+    allowed_days = th.days if th.days is not None else list(range(5))  # Mon–Fri default
+    if ts.weekday() not in allowed_days:
+        return False
+
+    from_min = int(th.from_time.split(":")[0]) * 60 + int(th.from_time.split(":")[1])
+    to_min = int(th.to_time.split(":")[0]) * 60 + int(th.to_time.split(":")[1])
+    bar_min = ts.hour * 60 + ts.minute
+
+    if from_min < to_min:
+        return from_min <= bar_min < to_min
+    # Overnight session (from > to)
+    return bar_min >= from_min or bar_min < to_min

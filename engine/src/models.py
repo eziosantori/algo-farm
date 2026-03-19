@@ -27,6 +27,10 @@ class IndicatorDef(BaseModel):
         "williamsr",
         "supertrend",
         "supertrend_direction",
+        # Phase B — session indicators
+        "session_active",
+        "session_high",
+        "session_low",
     ]
     params: dict[str, Any]
 
@@ -36,6 +40,15 @@ class RuleDef(BaseModel):
     condition: str
     value: float | None = None
     compare_to: str | None = None
+
+
+class TradingHours(BaseModel):
+    """Restrict trading to a specific UTC time window and/or set of weekdays."""
+
+    from_time: str = "00:00"        # session start 'HH:MM' UTC (inclusive)
+    to_time: str = "23:59"          # session end   'HH:MM' UTC (exclusive)
+    days: list[int] | None = None   # allowed weekdays: 0=Mon…4=Fri; None = Mon–Fri
+    force_close: bool = False       # close open position when session ends
 
 
 class ScaleOut(BaseModel):
@@ -58,6 +71,7 @@ class PositionManagement(BaseModel):
     trailing_sl_atr_mult: float = 2.0                          # multiplier for ATR trailing SL
     scale_out: ScaleOut | None = None                          # partial-close config
     time_exit_bars: int | None = None                          # close losing trade after N bars
+    trading_hours: TradingHours | None = None                  # session gate (UTC)
 
 
 class StrategyDefinition(BaseModel):
