@@ -488,8 +488,28 @@ concurrently, reducing the optimisation loop time.
 - [x] `engine/tests/unit/test_session.py` — 22 tests: session_active, session_high, session_low, _is_within_trading_hours, TradingHours model
 - [x] **183/183 Python tests passing** (+22 new)
 
+---
+
+## FOREX Strategies Integration — Phase C ✅ DONE
+
+> Short-side execution: bidirectional strategies. Unlocks mean-reversion fades and short-trend following.
+
+### G4 — Short-side execution ✅
+- [x] `entry_rules_short: list[RuleDef] = []` + `exit_rules_short: list[RuleDef] = []` added to `StrategyDefinition` (backward-compatible defaults)
+- [x] `StrategyComposer.next()`: long entry on `entry_rules`, short entry on `entry_rules_short` (elif — no same-bar conflict)
+- [x] Short-specific SL/TP: `sl = price + pips/ATR` (above entry), `tp = price - pips/ATR` (below entry)
+- [x] Trailing SL direction-aware: ATR trailing trails DOWN for shorts (min), UP for longs (max)
+- [x] SuperTrend trailing SL: trails down for shorts
+- [x] Scale-out profit: `entry_price - close` for shorts vs `close - entry_price` for longs
+- [x] Rule-based exit uses `exit_rules_short` when in short position (fallback to `exit_rules`)
+- [x] `_compute_trade_size`: use `abs(price - sl)` for correct sizing on both sides
+- [x] `shared/src/strategy.ts` — `entry_rules_short` + `exit_rules_short` added to `StrategyDefinitionSchema`
+- [x] `engine/tests/integration/test_short_side.py` — 9 tests: smoke, backward-compat, SL/TP variants, risk_pct short sizing
+- [x] `engine/tests/unit/test_position_sizing.py` — updated: short SL above entry now computes correctly (not fallback)
+- [x] **192/192 Python tests passing** (+9 new)
+
 ### Next phases (planned)
-- Phase C — Short-side execution: `entry_rules_short` + `sell()` in StrategyComposer
+- Phase D (future): multi-timeframe fusion, stateful event sequencing for SMC/Order Block patterns
 
 ---
 
