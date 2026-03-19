@@ -7,7 +7,7 @@ import pytest
 from src.backtest.indicators import IndicatorRegistry
 from src.backtest.indicators.trend import ema, macd, sma, supertrend, supertrend_direction
 from src.backtest.indicators.momentum import cci, obv, rsi, stoch, williamsr
-from src.backtest.indicators.volatility import adx, atr, bollinger_bands
+from src.backtest.indicators.volatility import adx, atr, bollinger_bands, bollinger_upper, bollinger_lower, bollinger_basis
 
 
 @pytest.fixture()
@@ -139,6 +139,97 @@ def test_bollinger_width_non_negative(linear_close: np.ndarray) -> None:
     assert np.all(valid >= 0)
 
 
+def test_bollinger_upper_above_lower(linear_close: np.ndarray) -> None:
+    upper = bollinger_upper(linear_close, period=20)
+    lower = bollinger_lower(linear_close, period=20)
+    valid_u = upper[~np.isnan(upper)]
+    valid_l = lower[~np.isnan(lower)]
+    assert np.all(valid_u >= valid_l)
+
+
+def test_bollinger_basis_between_bands(linear_close: np.ndarray) -> None:
+    upper = bollinger_upper(linear_close, period=20)
+    lower = bollinger_lower(linear_close, period=20)
+    basis = bollinger_basis(linear_close, period=20)
+    valid = ~np.isnan(upper)
+    assert np.all(basis[valid] <= upper[valid])
+    assert np.all(basis[valid] >= lower[valid])
+
+
+def test_bollinger_upper_length(linear_close: np.ndarray) -> None:
+    assert len(bollinger_upper(linear_close, period=20)) == len(linear_close)
+
+
+def test_bollinger_lower_length(linear_close: np.ndarray) -> None:
+    assert len(bollinger_lower(linear_close, period=20)) == len(linear_close)
+
+
+def test_bollinger_basis_length(linear_close: np.ndarray) -> None:
+    assert len(bollinger_basis(linear_close, period=20)) == len(linear_close)
+
+
+def test_bollinger_warmup_period(linear_close: np.ndarray) -> None:
+    """First valid value at index period-1."""
+    period = 20
+    upper = bollinger_upper(linear_close, period=period)
+    assert np.isnan(upper[period - 2])
+    assert not np.isnan(upper[period - 1])
+
+
+def test_bollinger_upper_registered() -> None:
+    fn = IndicatorRegistry.get("bollinger_upper")
+    assert callable(fn)
+
+
+def test_bollinger_lower_registered() -> None:
+    fn = IndicatorRegistry.get("bollinger_lower")
+    assert callable(fn)
+
+
+def test_bollinger_basis_registered() -> None:
+    fn = IndicatorRegistry.get("bollinger_basis")
+    assert callable(fn)
+
+
+def test_bollinger_basis_equals_sma(linear_close: np.ndarray) -> None:
+    """Basis must equal SMA of same period."""
+    from src.backtest.indicators.trend import sma
+    period = 20
+    basis = bollinger_basis(linear_close, period=period)
+    sma_result = sma(linear_close, period=period)
+    valid = ~np.isnan(basis)
+    np.testing.assert_allclose(basis[valid], sma_result[valid], rtol=1e-6)
+
+
+def test_bollinger_width_equals_upper_minus_lower(linear_close: np.ndarray) -> None:
+    """Legacy width indicator must equal upper - lower."""
+    width = bollinger_bands(linear_close, period=20)
+    upper = bollinger_upper(linear_close, period=20)
+    lower = bollinger_lower(linear_close, period=20)
+    valid = ~np.isnan(width)
+    np.testing.assert_allclose(width[valid], upper[valid] - lower[valid], rtol=1e-10)
+
+
+# --- OBV with real volume ---
+
+def test_obv_with_real_volume_differs_from_ones() -> None:
+    """OBV with heterogeneous volume must differ from OBV with unit volume."""
+    rng = np.random.default_rng(99)
+    close = np.array([1.0, 2.0, 3.0, 2.5, 3.5, 3.0])
+    volume = rng.uniform(100, 1000, len(close))
+    result_real = obv(close, volume)
+    result_unit = obv(close)
+    assert not np.allclose(result_real, result_unit)
+
+
+def test_obv_volume_weighted_increase() -> None:
+    """With rising closes, OBV should increase proportional to volume."""
+    close = np.array([1.0, 2.0, 3.0, 4.0])
+    volume = np.array([200.0, 300.0, 400.0, 500.0])
+    result = obv(close, volume)
+    assert result[-1] == pytest.approx(1400.0)  # 200 + 300 + 400 + 500
+
+
 # --- ADX ---
 
 def test_adx_range() -> None:
@@ -207,7 +298,8 @@ def test_supertrend_direction_registered() -> None:
 
 def test_all_required_indicators_registered() -> None:
     required = {
-        "sma", "ema", "macd", "rsi", "stoch", "atr", "bollinger_bands",
+        "sma", "ema", "macd", "rsi", "stoch", "atr",
+        "bollinger_bands", "bollinger_upper", "bollinger_lower", "bollinger_basis",
         "momentum", "adx", "cci", "obv", "williamsr",
         "supertrend", "supertrend_direction",
     }

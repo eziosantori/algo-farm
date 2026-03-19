@@ -442,6 +442,33 @@ concurrently, reducing the optimisation loop time.
 
 ---
 
+## FOREX Strategies Integration — Phase A ✅ DONE
+
+> Quick-win engine upgrades to unlock FX strategy paper ideas.
+> Identified gaps: Bollinger Bands API (width-only), OBV volume wiring.
+
+### G1 — Bollinger Bands: expose upper/lower/basis ✅
+- [x] `engine/src/backtest/indicators/volatility.py` — `_bollinger_components()` shared kernel;
+  added `bollinger_upper`, `bollinger_lower`, `bollinger_basis` registered indicator functions.
+  `bollinger_bands` (width) preserved for backward compatibility.
+- [x] `engine/src/models.py` — added `"bollinger_upper"`, `"bollinger_lower"`, `"bollinger_basis"` to `IndicatorDef.type` Literal
+- [x] `shared/src/strategy.ts` — Zod schema synced with 3 new types
+- [x] 11 new indicator tests (length, warmup, ordering, basis=SMA, width=upper-lower, registry)
+- [x] Unlocks: Bollinger Washout Mean Reversion (strategy 3), Volatility Expansion (strategy 10)
+
+### G2 — Wire real volume into OBV ✅
+- [x] `engine/src/backtest/strategy.py` — `init()` detects `"volume"` in indicator param names
+  and passes `data.Volume` as second positional argument (after Close)
+- [x] `engine/src/backtest/indicators/momentum.py` — `obv()` already accepted `volume` kwarg; now correctly wired
+- [x] 2 new tests: heterogeneous volume differs from unit-volume OBV, weighted accumulation
+- [x] **161/161 Python tests passing** (+13 new)
+
+### Next phases (planned)
+- Phase B — Session awareness: `trading_hours` filter + `session_high`/`session_low` indicators
+- Phase C — Short-side execution: `entry_rules_short` + `sell()` in StrategyComposer
+
+---
+
 ## Phase 5 — Strategy Vault ⬜ TODO
 
 - [ ] M1 — SQLite schema: strategies, parameter_sets, tags, journal_entries, audit_log

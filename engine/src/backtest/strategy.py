@@ -45,6 +45,13 @@ class StrategyComposer:
                         self_bt.data.Low,
                         **ind_params,
                     )
+                elif "volume" in fn_param_names:
+                    indicator = self_bt.I(  # type: ignore[attr-defined]
+                        fn,
+                        self_bt.data.Close,
+                        self_bt.data.Volume,
+                        **ind_params,
+                    )
                 else:
                     indicator = self_bt.I(fn, self_bt.data.Close, **ind_params)  # type: ignore[attr-defined]
                 setattr(self_bt, ind_def.name, indicator)

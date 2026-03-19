@@ -38,19 +38,69 @@ def atr(
     return result
 
 
+def _bollinger_components(
+    close: np.ndarray,
+    period: int = 20,
+    num_std: float = 2.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Shared Bollinger computation. Returns (upper, basis, lower)."""
+    upper = np.full_like(close, np.nan, dtype=float)
+    basis = np.full_like(close, np.nan, dtype=float)
+    lower = np.full_like(close, np.nan, dtype=float)
+    for i in range(period - 1, len(close)):
+        window = close[i - period + 1 : i + 1].astype(float)
+        mid = float(np.mean(window))
+        std = float(np.std(window, ddof=1))
+        basis[i] = mid
+        upper[i] = mid + num_std * std
+        lower[i] = mid - num_std * std
+    return upper, basis, lower
+
+
 @IndicatorRegistry.register("bollinger_bands")
 def bollinger_bands(
     close: np.ndarray,
     period: int = 20,
     num_std: float = 2.0,
 ) -> np.ndarray:
-    """Bollinger Band width (upper - lower). Returns width array."""
+    """Bollinger Band width (upper - lower). Kept for backward compatibility."""
+    upper, _, lower = _bollinger_components(close, period, num_std)
     result = np.full_like(close, np.nan, dtype=float)
-    for i in range(period - 1, len(close)):
-        window = close[i - period + 1 : i + 1].astype(float)
-        std = float(np.std(window, ddof=1))
-        result[i] = 2.0 * num_std * std
+    valid = ~np.isnan(upper)
+    result[valid] = upper[valid] - lower[valid]
     return result
+
+
+@IndicatorRegistry.register("bollinger_upper")
+def bollinger_upper(
+    close: np.ndarray,
+    period: int = 20,
+    num_std: float = 2.0,
+) -> np.ndarray:
+    """Bollinger upper band: basis + num_std × std."""
+    upper, _, _ = _bollinger_components(close, period, num_std)
+    return upper
+
+
+@IndicatorRegistry.register("bollinger_lower")
+def bollinger_lower(
+    close: np.ndarray,
+    period: int = 20,
+    num_std: float = 2.0,
+) -> np.ndarray:
+    """Bollinger lower band: basis - num_std × std."""
+    _, _, lower = _bollinger_components(close, period, num_std)
+    return lower
+
+
+@IndicatorRegistry.register("bollinger_basis")
+def bollinger_basis(
+    close: np.ndarray,
+    period: int = 20,
+) -> np.ndarray:
+    """Bollinger basis (SMA of close over period)."""
+    _, basis, _ = _bollinger_components(close, period)
+    return basis
 
 
 @IndicatorRegistry.register("adx")
