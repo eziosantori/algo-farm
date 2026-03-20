@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from src.backtest.indicators import IndicatorRegistry
-from src.backtest.indicators.trend import ema, macd, sma, supertrend, supertrend_direction
-from src.backtest.indicators.momentum import cci, obv, rsi, stoch, williamsr
+from src.backtest.indicators.trend import ema, htf_ema, htf_sma, macd, sma, supertrend, supertrend_direction
+from src.backtest.indicators.momentum import cci, obv, roc, rsi, stoch, volume_sma, williamsr
 from src.backtest.indicators.volatility import adx, atr, bollinger_bands, bollinger_upper, bollinger_lower, bollinger_basis
 
 
@@ -294,6 +295,160 @@ def test_supertrend_direction_registered() -> None:
     assert callable(fn)
 
 
+# --- ROC ---
+
+def test_roc_length(linear_close: np.ndarray) -> None:
+    result = roc(linear_close, period=14)
+    assert len(result) == len(linear_close)
+
+
+def test_roc_warmup(linear_close: np.ndarray) -> None:
+    period = 14
+    result = roc(linear_close, period=period)
+    assert np.all(np.isnan(result[:period]))
+    assert not np.isnan(result[period])
+
+
+def test_roc_constant_input(constant_close: np.ndarray) -> None:
+    """Constant close → ROC = 0%."""
+    result = roc(constant_close, period=10)
+    valid = result[~np.isnan(result)]
+    np.testing.assert_allclose(valid, 0.0)
+
+
+def test_roc_known_value() -> None:
+    """Manual check: close doubles from 1.0 to 2.0 after 5 bars."""
+    close = np.array([1.0, 1.2, 1.4, 1.6, 1.8, 2.0])
+    result = roc(close, period=5)
+    assert result[5] == pytest.approx(100.0)  # (2.0 - 1.0) / 1.0 * 100
+
+
+def test_roc_registered() -> None:
+    fn = IndicatorRegistry.get("roc")
+    assert callable(fn)
+
+
+# --- Volume SMA ---
+
+def test_volume_sma_length() -> None:
+    close = np.ones(50)
+    volume = np.ones(50) * 100.0
+    result = volume_sma(close, volume, period=10)
+    assert len(result) == 50
+
+
+def test_volume_sma_warmup() -> None:
+    close = np.ones(50)
+    volume = np.ones(50) * 100.0
+    period = 10
+    result = volume_sma(close, volume, period=period)
+    assert np.isnan(result[period - 2])
+    assert not np.isnan(result[period - 1])
+
+
+def test_volume_sma_constant_volume() -> None:
+    close = np.ones(50)
+    volume = np.ones(50) * 200.0
+    result = volume_sma(close, volume, period=10)
+    valid = result[~np.isnan(result)]
+    np.testing.assert_allclose(valid, 200.0)
+
+
+def test_volume_sma_spike() -> None:
+    """Volume spike should raise the average, then drop after rolling out."""
+    close = np.ones(25)
+    volume = np.ones(25) * 100.0
+    volume[10] = 1000.0  # spike at bar 10
+    result = volume_sma(close, volume, period=5)
+    assert result[10] > 100.0  # average now includes the spike
+    assert result[16] == pytest.approx(100.0)  # spike fully rolled out (bars 12–16)
+
+
+def test_volume_sma_registered() -> None:
+    fn = IndicatorRegistry.get("volume_sma")
+    assert callable(fn)
+
+
+# --- HTF EMA / SMA ---
+
+@pytest.fixture()
+def h1_timestamps() -> np.ndarray:
+    """Generate 500 hourly timestamps (weekdays only, skipping weekends)."""
+    start = pd.Timestamp("2023-01-02 00:00")  # Monday
+    ts: list[pd.Timestamp] = []
+    current = start
+    while len(ts) < 500:
+        if current.weekday() < 5:  # Mon-Fri
+            ts.append(current)
+        current += pd.Timedelta(hours=1)
+    return np.array(ts, dtype="datetime64[ns]")
+
+
+@pytest.fixture()
+def h1_close(h1_timestamps: np.ndarray) -> np.ndarray:
+    rng = np.random.default_rng(42)
+    return 1.1 + np.cumsum(rng.normal(0, 0.001, len(h1_timestamps)))
+
+
+def test_htf_ema_length(h1_close: np.ndarray, h1_timestamps: np.ndarray) -> None:
+    result = htf_ema(h1_close, h1_timestamps, period=10, timeframe="H4")
+    assert len(result) == len(h1_close)
+
+
+def test_htf_sma_length(h1_close: np.ndarray, h1_timestamps: np.ndarray) -> None:
+    result = htf_sma(h1_close, h1_timestamps, period=10, timeframe="H4")
+    assert len(result) == len(h1_close)
+
+
+def test_htf_ema_forward_filled(h1_close: np.ndarray, h1_timestamps: np.ndarray) -> None:
+    """HTF values should be constant within each HTF bar (forward-filled)."""
+    result = htf_ema(h1_close, h1_timestamps, period=5, timeframe="H4")
+    valid = result[~np.isnan(result)]
+    assert len(valid) > 0
+    # Within an H4 bar (4 consecutive H1 bars), the HTF value should be the same
+    # Find first valid index
+    first_valid = int(np.argmax(~np.isnan(result)))
+    # Check a window of 4 consecutive bars starting from a bar aligned to H4
+    for start in range(first_valid, min(first_valid + 40, len(result) - 4)):
+        ts = pd.Timestamp(h1_timestamps[start])
+        if ts.hour % 4 == 0 and not np.isnan(result[start]):
+            block = result[start : start + 4]
+            if not np.any(np.isnan(block)):
+                # All 4 should be the same (ffill from HTF)
+                assert np.all(block == block[0]), f"Block at {start} not constant: {block}"
+                break
+
+
+def test_htf_sma_warmup(h1_close: np.ndarray, h1_timestamps: np.ndarray) -> None:
+    """With period=10 on H4, the first ~40 H1 bars should be NaN."""
+    result = htf_sma(h1_close, h1_timestamps, period=10, timeframe="H4")
+    # First few bars must be NaN (warmup)
+    assert np.isnan(result[0])
+    # Eventually there must be valid values
+    assert not np.all(np.isnan(result))
+
+
+def test_htf_invalid_timeframe(h1_close: np.ndarray, h1_timestamps: np.ndarray) -> None:
+    with pytest.raises(ValueError, match="Unknown timeframe"):
+        htf_ema(h1_close, h1_timestamps, period=10, timeframe="X9")
+
+
+def test_htf_same_or_lower_tf_raises(h1_close: np.ndarray, h1_timestamps: np.ndarray) -> None:
+    """HTF timeframe must be strictly larger than base TF."""
+    with pytest.raises(ValueError, match="must be larger"):
+        htf_ema(h1_close, h1_timestamps, period=10, timeframe="M15")
+
+
+def test_htf_ema_registered() -> None:
+    fn = IndicatorRegistry.get("htf_ema")
+    assert callable(fn)
+
+
+def test_htf_sma_registered() -> None:
+    fn = IndicatorRegistry.get("htf_sma")
+    assert callable(fn)
+
+
 # --- Registry completeness ---
 
 def test_all_required_indicators_registered() -> None:
@@ -303,6 +458,8 @@ def test_all_required_indicators_registered() -> None:
         "momentum", "adx", "cci", "obv", "williamsr",
         "supertrend", "supertrend_direction",
         "session_active", "session_high", "session_low",
+        "roc", "volume_sma",
+        "htf_ema", "htf_sma",
     }
     registered = set(IndicatorRegistry.list_all())
     # momentum is listed in the plan but maps to an alias — accept missing for now

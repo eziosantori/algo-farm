@@ -25,6 +25,11 @@ class IndicatorDef(BaseModel):
         "cci",
         "obv",
         "williamsr",
+        "roc",
+        "volume_sma",
+        # Phase D — higher-timeframe indicators
+        "htf_ema",
+        "htf_sma",
         "supertrend",
         "supertrend_direction",
         # Phase B — session indicators

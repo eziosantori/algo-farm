@@ -1,7 +1,8 @@
-"""Trend indicators: sma, ema, macd, supertrend."""
+"""Trend indicators: sma, ema, macd, supertrend, htf_ema, htf_sma."""
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from src.backtest.indicators import IndicatorRegistry
 
@@ -146,3 +147,135 @@ def supertrend_direction(
         low = close
     _, direction = _compute_supertrend(close, high, low, period, multiplier)
     return direction
+
+
+# ---------------------------------------------------------------------------
+# Higher-Timeframe (HTF) indicators
+# ---------------------------------------------------------------------------
+
+_TF_MINUTES: dict[str, int] = {
+    "M1": 1, "M5": 5, "M10": 10, "M15": 15, "M30": 30,
+    "H1": 60, "H4": 240, "D1": 1440, "W1": 10080,
+}
+
+
+def _detect_base_tf(timestamps: np.ndarray) -> str:
+    """Infer the base timeframe from the median bar spacing."""
+    ts = pd.to_datetime(timestamps)
+    diffs = ts[1:] - ts[:-1]
+    # Filter out weekend gaps (> 2 days) to get the true bar spacing
+    mask = diffs < pd.Timedelta(days=2)
+    if mask.any():
+        median_minutes = int(diffs[mask].median().total_seconds() // 60)
+    else:
+        median_minutes = int(diffs.median().total_seconds() // 60)
+    # Find closest matching timeframe
+    best_tf = "H1"
+    best_diff = abs(60 - median_minutes)
+    for tf, minutes in _TF_MINUTES.items():
+        diff = abs(minutes - median_minutes)
+        if diff < best_diff:
+            best_diff = diff
+            best_tf = tf
+    return best_tf
+
+
+def _resample_and_compute(
+    close: np.ndarray,
+    timestamps: np.ndarray,
+    timeframe: str,
+    compute_fn: str,
+    period: int,
+) -> np.ndarray:
+    """Resample *close* to a higher timeframe, compute an indicator, and forward-fill back.
+
+    Parameters
+    ----------
+    close:      Close prices at the base timeframe.
+    timestamps: Datetime64 array aligned with close.
+    timeframe:  Target higher timeframe (e.g. "H4", "D1").
+    compute_fn: "ema" or "sma".
+    period:     Indicator period applied on the resampled bars.
+
+    Returns
+    -------
+    np.ndarray of same length as *close*, with the HTF indicator value
+    forward-filled onto each base-timeframe bar.
+    """
+    if timeframe not in _TF_MINUTES:
+        raise ValueError(f"Unknown timeframe '{timeframe}'. Supported: {list(_TF_MINUTES.keys())}")
+
+    base_tf = _detect_base_tf(timestamps)
+    base_min = _TF_MINUTES[base_tf]
+    target_min = _TF_MINUTES[timeframe]
+
+    if target_min <= base_min:
+        raise ValueError(
+            f"HTF timeframe '{timeframe}' ({target_min}m) must be larger "
+            f"than base timeframe '{base_tf}' ({base_min}m)"
+        )
+
+    # Build a pandas Series indexed by timestamp, resample to target TF close
+    ts_index = pd.DatetimeIndex(timestamps)
+    ser = pd.Series(close.astype(float), index=ts_index)
+
+    # Map timeframe to pandas resample rule
+    resample_rule = f"{target_min}min" if target_min < 1440 else f"{target_min // 1440}D"
+    if timeframe == "W1":
+        resample_rule = "W-FRI"
+
+    htf_close = ser.resample(resample_rule).last().dropna()
+
+    if len(htf_close) < period:
+        return np.full(len(close), np.nan, dtype=float)
+
+    # Compute indicator on HTF bars
+    htf_values = htf_close.values
+    if compute_fn == "ema":
+        htf_indicator = ema(htf_values, period)
+    else:
+        htf_indicator = sma(htf_values, period)
+
+    # Build a Series of HTF indicator values, then reindex to base timestamps with ffill
+    htf_series = pd.Series(htf_indicator, index=htf_close.index)
+    result_series = htf_series.reindex(ts_index, method="ffill")
+
+    return result_series.to_numpy(dtype=float)
+
+
+@IndicatorRegistry.register("htf_ema")
+def htf_ema(
+    close: np.ndarray,
+    timestamps: np.ndarray,
+    period: int = 50,
+    timeframe: str = "H4",
+) -> np.ndarray:
+    """EMA computed on a higher timeframe and forward-filled to the base timeframe.
+
+    Parameters
+    ----------
+    close:      Close price array at the base timeframe.
+    timestamps: Datetime64 array aligned with close.
+    period:     EMA period applied on the resampled HTF bars.
+    timeframe:  Target higher timeframe (e.g. "H4", "D1").
+    """
+    return _resample_and_compute(close, timestamps, timeframe, "ema", period)
+
+
+@IndicatorRegistry.register("htf_sma")
+def htf_sma(
+    close: np.ndarray,
+    timestamps: np.ndarray,
+    period: int = 50,
+    timeframe: str = "H4",
+) -> np.ndarray:
+    """SMA computed on a higher timeframe and forward-filled to the base timeframe.
+
+    Parameters
+    ----------
+    close:      Close price array at the base timeframe.
+    timestamps: Datetime64 array aligned with close.
+    period:     SMA period applied on the resampled HTF bars.
+    timeframe:  Target higher timeframe (e.g. "H4", "D1").
+    """
+    return _resample_and_compute(close, timestamps, timeframe, "sma", period)

@@ -102,6 +102,37 @@ def williamsr(
     return result
 
 
+@IndicatorRegistry.register("roc")
+def roc(close: np.ndarray, period: int = 14) -> np.ndarray:
+    """Rate of Change (%). Returns (close[i] - close[i-period]) / close[i-period] * 100."""
+    result = np.full_like(close, np.nan, dtype=float)
+    for i in range(period, len(close)):
+        prev = float(close[i - period])
+        if prev != 0:
+            result[i] = (float(close[i]) - prev) / prev * 100.0
+        else:
+            result[i] = 0.0
+    return result
+
+
+@IndicatorRegistry.register("volume_sma")
+def volume_sma(close: np.ndarray, volume: np.ndarray | None = None, period: int = 20) -> np.ndarray:
+    """Simple Moving Average of volume over *period* bars.
+
+    Parameters
+    ----------
+    close:   Close price array (shape driver — values are not used).
+    volume:  Volume array aligned with close. Falls back to ones if absent.
+    period:  Lookback window for the average.
+    """
+    if volume is None:
+        volume = np.ones_like(close)
+    result = np.full(len(volume), np.nan, dtype=float)
+    for i in range(period - 1, len(volume)):
+        result[i] = np.mean(volume[i - period + 1 : i + 1])
+    return result
+
+
 @IndicatorRegistry.register("obv")
 def obv(close: np.ndarray, volume: np.ndarray | None = None) -> np.ndarray:
     """On Balance Volume. If volume not provided, uses ones."""
