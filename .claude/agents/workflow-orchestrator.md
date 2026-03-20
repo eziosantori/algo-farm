@@ -301,6 +301,53 @@ is "Run `/strategy-lab` again with tighter entry rules, or `/optimize` with diff
 
 ---
 
+### PHASE 5.5 — RESEARCH NOTES (optional)
+
+Ask the user:
+> Save research summary to Vault? (y/N)
+
+If **yes**:
+
+Compose the following markdown from collected workflow data:
+
+```markdown
+## Research Summary — <strategy_name>
+
+**Date:** <today>  **IS window:** <is_start> → <is_end>
+
+### Robustness Results
+| Pair | IS Sharpe | OOS Sharpe | OOS/IS | WF Eff | MC P5 | Result |
+|------|-----------|------------|--------|--------|-------|--------|
+<rows from PHASE 4>
+
+### Performance Improvement
+- Baseline mean score: <baseline_score>
+- Final mean score: <final_score>  (+<pct>%)
+- Iterations kept: <iterations_kept>/<total_iterations>
+
+### Best Parameters
+<key: value for each param>
+
+### Robustness: <N>/<M> pairs passed — <PASS/FAIL>
+```
+
+Then save it:
+```bash
+NOTES=$(cat <<'MDEOF'
+<markdown content>
+MDEOF
+)
+curl -s -X PATCH http://localhost:3001/lab/sessions/<robustness_session_id>/notes \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg notes "$NOTES" '{research_notes: $notes}')"
+```
+
+Print: `Research notes saved to Vault.`
+
+If **no** (or Enter): skip silently.
+
+---
+
 ### PHASE 5 — DONE
 
 Mark all Lab sessions completed:

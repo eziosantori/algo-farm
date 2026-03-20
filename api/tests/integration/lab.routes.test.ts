@@ -173,4 +173,32 @@ describe("Lab Routes", () => {
       expect(res.status).toBe(404);
     });
   });
+
+  // --- Notes ----------------------------------------------------------------
+
+  describe("PATCH /lab/sessions/:id/notes", () => {
+    it("saves research notes and returns 200 with success:true", async () => {
+      const { body: { id } } = await request(app).post("/lab/sessions").send(validSession);
+      const res = await request(app)
+        .patch(`/lab/sessions/${id}/notes`)
+        .send({ research_notes: "## Test\n- Sharpe 1.2" });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    it("returns 404 for non-existent session id", async () => {
+      const res = await request(app)
+        .patch("/lab/sessions/nope/notes")
+        .send({ research_notes: "some notes" });
+      expect(res.status).toBe(404);
+    });
+
+    it("rejects empty research_notes string with 400", async () => {
+      const { body: { id } } = await request(app).post("/lab/sessions").send(validSession);
+      const res = await request(app)
+        .patch(`/lab/sessions/${id}/notes`)
+        .send({ research_notes: "" });
+      expect(res.status).toBe(400);
+    });
+  });
 });

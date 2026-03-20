@@ -181,3 +181,126 @@ describe("LabRepository — results", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+describe("LabRepository — updateSessionNotes", () => {
+  let db: Database.Database;
+  let repo: LabRepository;
+
+  beforeEach(() => {
+    db = createInMemoryDb();
+    repo = new LabRepository(db);
+  });
+
+  afterEach(() => db.close());
+
+  it("saves notes and returns true", () => {
+    const { id } = repo.createSession(sampleSession);
+    const ok = repo.updateSessionNotes(id, "## Test notes");
+    expect(ok).toBe(true);
+    const row = db.prepare("SELECT research_notes FROM lab_sessions WHERE id = ?").get(id) as { research_notes: string };
+    expect(row.research_notes).toBe("## Test notes");
+  });
+
+  it("returns false for non-existent session id", () => {
+    expect(repo.updateSessionNotes("nope", "notes")).toBe(false);
+  });
+});
+
+describe("LabRepository — getStrategyLabSummary", () => {
+  let db: Database.Database;
+  let repo: LabRepository;
+  let strategyId: string;
+
+  beforeEach(() => {
+    db = createInMemoryDb();
+    // Add lifecycle_status column as migration would do
+    try { db.exec(`ALTER TABLE strategies ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'draft'`); } catch { /* already exists */ }
+    repo = new LabRepository(db);
+    strategyId = "strategy-" + Math.random().toString(36).slice(2);
+    db.prepare(
+      `INSERT INTO strategies (id, name, variant, definition_json, created_at, updated_at, lifecycle_status)
+       VALUES (?, 'Test', 'basic', '{}', datetime('now'), datetime('now'), 'validated')`
+    ).run(strategyId);
+  });
+
+  afterEach(() => db.close());
+
+  it("returns null when no sessions are linked", () => {
+    expect(repo.getStrategyLabSummary(strategyId)).toBeNull();
+  });
+
+  it("top_performers are ordered by sharpe DESC", () => {
+    const { id: sessionId } = repo.createSession({ ...sampleSession, strategy_id: strategyId });
+    repo.addResult({
+      session_id: sessionId, instrument: "EURUSD", timeframe: "H1",
+      params_json: "{}", metrics_json: JSON.stringify({ ...sampleMetrics, sharpe_ratio: 0.5 }),
+      split: "full",
+    });
+    repo.addResult({
+      session_id: sessionId, instrument: "XAUUSD", timeframe: "H4",
+      params_json: "{}", metrics_json: JSON.stringify({ ...sampleMetrics, sharpe_ratio: 1.8 }),
+      split: "full",
+    });
+    const summary = repo.getStrategyLabSummary(strategyId)!;
+    expect(summary.top_performers[0].sharpe_ratio).toBe(1.8);
+    expect(summary.top_performers[1].sharpe_ratio).toBe(0.5);
+  });
+
+  it("excludes split != 'full' from top_performers", () => {
+    const { id: sessionId } = repo.createSession({ ...sampleSession, strategy_id: strategyId });
+    repo.addResult({
+      session_id: sessionId, instrument: "EURUSD", timeframe: "H1",
+      params_json: "{}", metrics_json: JSON.stringify({ ...sampleMetrics, sharpe_ratio: 2.0 }),
+      split: "is",
+    });
+    repo.addResult({
+      session_id: sessionId, instrument: "XAUUSD", timeframe: "H1",
+      params_json: "{}", metrics_json: JSON.stringify({ ...sampleMetrics, sharpe_ratio: 1.2 }),
+      split: "full",
+    });
+    const summary = repo.getStrategyLabSummary(strategyId)!;
+    expect(summary.top_performers).toHaveLength(1);
+    expect(summary.top_performers[0].instrument).toBe("XAUUSD");
+  });
+
+  it("sessions_with_notes only includes sessions with notes set", () => {
+    const { id: s1 } = repo.createSession({ ...sampleSession, strategy_id: strategyId });
+    const { id: s2 } = repo.createSession({ ...sampleSession, strategy_id: strategyId });
+    repo.updateSessionNotes(s1, "## My research");
+    const summary = repo.getStrategyLabSummary(strategyId)!;
+    expect(summary.sessions_with_notes).toHaveLength(1);
+    expect(summary.sessions_with_notes[0].id).toBe(s1);
+    expect(summary.sessions_with_notes[0].research_notes).toBe("## My research");
+    void s2;
+  });
+
+  it("coverage is correct across multiple sessions", () => {
+    const { id: s1 } = repo.createSession({ ...sampleSession, strategy_id: strategyId });
+    const { id: s2 } = repo.createSession({ ...sampleSession, strategy_id: strategyId });
+    repo.addResult({
+      session_id: s1, instrument: "EURUSD", timeframe: "H1",
+      params_json: "{}", metrics_json: JSON.stringify(sampleMetrics), split: "full",
+    });
+    repo.addResult({
+      session_id: s2, instrument: "GER40", timeframe: "H4",
+      params_json: "{}", metrics_json: JSON.stringify(sampleMetrics), split: "full",
+    });
+    const summary = repo.getStrategyLabSummary(strategyId)!;
+    expect(summary.coverage.instruments).toContain("EURUSD");
+    expect(summary.coverage.instruments).toContain("GER40");
+    expect(summary.coverage.timeframes).toContain("H1");
+    expect(summary.coverage.timeframes).toContain("H4");
+    expect(summary.coverage.total_runs).toBe(2);
+  });
+
+  it("best_params comes from the top performer", () => {
+    const { id: sessionId } = repo.createSession({ ...sampleSession, strategy_id: strategyId });
+    repo.addResult({
+      session_id: sessionId, instrument: "EURUSD", timeframe: "H1",
+      params_json: JSON.stringify({ period: 21 }), metrics_json: JSON.stringify({ ...sampleMetrics, sharpe_ratio: 1.5 }),
+      split: "full",
+    });
+    const summary = repo.getStrategyLabSummary(strategyId)!;
+    expect(summary.best_params).toEqual({ period: 21 });
+  });
+});

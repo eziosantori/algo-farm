@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { getDb } from "../db/client.js";
 import { StrategyRepository } from "../db/repositories/strategy.repo.js";
+import { LabRepository } from "../db/repositories/lab.repo.js";
 import { validateBody } from "../middleware/validate.js";
 import { StrategyDefinitionSchema } from "@algo-farm/shared/strategy";
 
@@ -90,6 +91,16 @@ router.patch(
     res.json({ success: true });
   }
 );
+
+router.get("/strategies/:id/lab-summary", (req: Request, res: Response): void => {
+  const labRepo = new LabRepository(getDb());
+  const summary = labRepo.getStrategyLabSummary(paramId(req));
+  if (!summary) {
+    res.status(404).json({ error: "NOT_FOUND", message: "No lab data for this strategy" });
+    return;
+  }
+  res.json(summary);
+});
 
 router.delete("/strategies/:id", (req: Request, res: Response): void => {
   const repo = getRepo();

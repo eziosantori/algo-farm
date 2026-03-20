@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS lab_sessions (
   strategy_id TEXT REFERENCES strategies(id) ON DELETE SET NULL,
   -- IS/OOS date window for this session (NULL = full data range used)
   is_start TEXT,
-  is_end TEXT
+  is_end TEXT,
+  research_notes TEXT
 );
 
 CREATE TABLE IF NOT EXISTS backtest_results (

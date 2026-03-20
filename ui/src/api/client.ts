@@ -136,6 +136,30 @@ export interface LabSessionDetail {
 }
 
 // ---------------------------------------------------------------------------
+// Vault / Lab summary types
+// ---------------------------------------------------------------------------
+
+export interface TopPerformerRow {
+  instrument: string;
+  timeframe: string;
+  sharpe_ratio: number;
+  total_return_pct: number;
+  max_drawdown_pct: number;
+  win_rate_pct: number;
+  profit_factor: number;
+  total_trades: number;
+  params: Record<string, unknown>;
+  status: string;
+}
+
+export interface StrategyLabSummary {
+  top_performers: TopPerformerRow[];
+  best_params: Record<string, unknown>;
+  coverage: { instruments: string[]; timeframes: string[]; total_runs: number };
+  sessions_with_notes: Array<{ id: string; created_at: string; research_notes: string }>;
+}
+
+// ---------------------------------------------------------------------------
 // Export helpers
 // ---------------------------------------------------------------------------
 
@@ -236,6 +260,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+
+  getStrategyLabSummary(id: string): Promise<StrategyLabSummary> {
+    return request(`/strategies/${id}/lab-summary`);
   },
 
   runLabSession(

@@ -5,6 +5,7 @@ import { StrategiesPage } from "./components/Strategies/StrategiesPage.tsx";
 import { LabPage } from "./components/Lab/LabPage.tsx";
 import { DashboardPage } from "./components/Dashboard/DashboardPage.tsx";
 import { VaultPage } from "./components/Vault/VaultPage.tsx";
+import { VaultDetailPage } from "./components/Vault/VaultDetailPage.tsx";
 
 function useDarkMode() {
   const [dark, setDark] = useState(
@@ -87,6 +88,7 @@ export function App() {
             <Route path="/strategies" element={<StrategiesPage />} />
             <Route path="/lab" element={<LabPage />} />
             <Route path="/vault" element={<VaultPage />} />
+            <Route path="/vault/:id" element={<VaultDetailPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
           </Routes>
         </main>

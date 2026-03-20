@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import type { StrategySummary } from "../../api/client.ts";
 import { downloadExport } from "../../api/client.ts";
 
@@ -68,7 +69,12 @@ export function StrategyCard({ strategy }: Props) {
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-gray-900 dark:text-white truncate">
-            {strategy.name}
+            <Link
+              to={`/vault/${strategy.id}`}
+              className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            >
+              {strategy.name}
+            </Link>
           </h3>
           <p className="text-xs text-gray-400 mt-0.5">
             {new Date(strategy.created_at).toLocaleDateString()}

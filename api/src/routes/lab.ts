@@ -49,6 +49,10 @@ const UpdateSessionStatusSchema = z.object({
   status: z.enum(["running", "completed", "failed"]),
 });
 
+const NotesSchema = z.object({
+  research_notes: z.string().min(1),
+});
+
 const RunSessionSchema = z.object({
   data_dir: z.string().optional(),
   engine_db_path: z.string().optional(),
@@ -114,6 +118,24 @@ router.patch(
       return;
     }
 
+    res.json({ success: true });
+  }
+);
+
+// PATCH /lab/sessions/:id/notes — save research notes to a session
+router.patch(
+  "/lab/sessions/:id/notes",
+  validateBody(NotesSchema),
+  (req: Request, res: Response): void => {
+    const repo = getRepo();
+    const ok = repo.updateSessionNotes(
+      req.params["id"] as string,
+      req.body.research_notes
+    );
+    if (!ok) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Session not found" });
+      return;
+    }
     res.json({ success: true });
   }
 );

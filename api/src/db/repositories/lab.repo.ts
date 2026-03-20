@@ -86,6 +86,35 @@ export interface LabSessionDetail {
   strategy_id?: string | null;
   is_start?: string | null;
   is_end?: string | null;
+  research_notes: string | null;
+}
+
+export interface TopPerformerRow {
+  instrument: string;
+  timeframe: string;
+  sharpe_ratio: number;
+  total_return_pct: number;
+  max_drawdown_pct: number;
+  win_rate_pct: number;
+  profit_factor: number;
+  total_trades: number;
+  params: Record<string, unknown>;
+  status: string;
+}
+
+export interface StrategyLabSummary {
+  top_performers: TopPerformerRow[];
+  best_params: Record<string, unknown>;
+  coverage: {
+    instruments: string[];
+    timeframes: string[];
+    total_runs: number;
+  };
+  sessions_with_notes: Array<{
+    id: string;
+    created_at: string;
+    research_notes: string;
+  }>;
 }
 
 export interface BacktestResultDetail {
@@ -204,6 +233,7 @@ export class LabRepository {
       strategy_id: row.strategy_id ?? null,
       is_start: row.is_start ?? null,
       is_end: row.is_end ?? null,
+      research_notes: (row as LabSessionRow & { research_notes?: string | null }).research_notes ?? null,
     };
   }
 
@@ -294,6 +324,73 @@ export class LabRepository {
     });
 
     return txn();
+  }
+
+  updateSessionNotes(id: string, notes: string): boolean {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(`UPDATE lab_sessions SET research_notes = ?, updated_at = ? WHERE id = ?`)
+      .run(notes, now, id);
+    return result.changes > 0;
+  }
+
+  getStrategyLabSummary(strategyId: string): StrategyLabSummary | null {
+    const sessionCount = this.db
+      .prepare(`SELECT COUNT(*) as n FROM lab_sessions WHERE strategy_id = ?`)
+      .get(strategyId) as { n: number };
+    if (sessionCount.n === 0) return null;
+
+    const rows = this.db.prepare(`
+      SELECT br.instrument, br.timeframe, br.params_json, br.metrics_json, br.status
+      FROM backtest_results br
+      JOIN lab_sessions ls ON br.session_id = ls.id
+      WHERE ls.strategy_id = ? AND br.split = 'full'
+      ORDER BY json_extract(br.metrics_json, '$.sharpe_ratio') DESC
+      LIMIT 10
+    `).all(strategyId) as Array<{
+      instrument: string;
+      timeframe: string;
+      params_json: string;
+      metrics_json: string;
+      status: string;
+    }>;
+
+    const coverageRows = this.db.prepare(`
+      SELECT DISTINCT br.instrument, br.timeframe
+      FROM backtest_results br
+      JOIN lab_sessions ls ON br.session_id = ls.id
+      WHERE ls.strategy_id = ? AND br.split = 'full'
+    `).all(strategyId) as Array<{ instrument: string; timeframe: string }>;
+
+    const notesRows = this.db.prepare(`
+      SELECT id, created_at, research_notes
+      FROM lab_sessions
+      WHERE strategy_id = ? AND research_notes IS NOT NULL
+      ORDER BY created_at DESC
+    `).all(strategyId) as Array<{ id: string; created_at: string; research_notes: string }>;
+
+    const top_performers: TopPerformerRow[] = rows.map((r) => ({
+      ...(JSON.parse(r.metrics_json) as BacktestMetrics),
+      instrument: r.instrument,
+      timeframe: r.timeframe,
+      params: JSON.parse(r.params_json) as Record<string, unknown>,
+      status: r.status,
+    }));
+
+    return {
+      top_performers,
+      best_params: top_performers[0]?.params ?? {},
+      coverage: {
+        instruments: [...new Set(coverageRows.map((r) => r.instrument))],
+        timeframes: [...new Set(coverageRows.map((r) => r.timeframe))],
+        total_runs: coverageRows.length,
+      },
+      sessions_with_notes: notesRows.map((r) => ({
+        id: r.id,
+        created_at: r.created_at,
+        research_notes: r.research_notes,
+      })),
+    };
   }
 }
 
