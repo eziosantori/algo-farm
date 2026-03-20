@@ -1,8 +1,20 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import { getDb } from "../db/client.js";
 import { StrategyRepository } from "../db/repositories/strategy.repo.js";
 import { validateBody } from "../middleware/validate.js";
 import { StrategyDefinitionSchema } from "@algo-farm/shared/strategy";
+
+const LifecycleStatusSchema = z.object({
+  lifecycle_status: z.enum([
+    "draft",
+    "optimizing",
+    "validated",
+    "production_standard",
+    "production_aggressive",
+    "production_defensive",
+  ]),
+});
 
 const router = Router();
 
@@ -24,9 +36,16 @@ router.post(
   }
 );
 
-router.get("/strategies", (_req: Request, res: Response): void => {
+router.get("/strategies", (req: Request, res: Response): void => {
   const repo = getRepo();
-  const strategies = repo.list();
+  let strategies = repo.list();
+
+  const statusFilter = req.query["lifecycle_status"] as string | undefined;
+  if (statusFilter) {
+    const allowed = new Set(statusFilter.split(",").map((s) => s.trim()));
+    strategies = strategies.filter((s) => allowed.has(s.lifecycle_status));
+  }
+
   res.json({ strategies });
 });
 
@@ -54,6 +73,20 @@ router.put(
       return;
     }
 
+    res.json({ success: true });
+  }
+);
+
+router.patch(
+  "/strategies/:id/lifecycle",
+  validateBody(LifecycleStatusSchema),
+  (req: Request, res: Response): void => {
+    const repo = getRepo();
+    const updated = repo.updateLifecycleStatus(paramId(req), req.body.lifecycle_status);
+    if (!updated) {
+      res.status(404).json({ error: "NOT_FOUND", message: "Strategy not found" });
+      return;
+    }
     res.json({ success: true });
   }
 );

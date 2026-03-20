@@ -8,6 +8,7 @@ import healthRouter from "./routes/health.js";
 import strategiesRouter from "./routes/strategies.js";
 import wizardRouter from "./routes/wizard.js";
 import labRouter from "./routes/lab.js";
+import exportRouter from "./routes/export.js";
 import { createWsServer } from "./websocket/server.js";
 import { startWorker } from "./queue/backtest.worker.js";
 
@@ -24,6 +25,7 @@ export function createApp(): express.Application {
   app.use(strategiesRouter);
   app.use(wizardRouter);
   app.use(labRouter);
+  app.use("/strategies", exportRouter);
 
   return app;
 }

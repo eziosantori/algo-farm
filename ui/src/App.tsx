@@ -4,6 +4,7 @@ import { WizardPage } from "./components/Wizard/WizardPage.tsx";
 import { StrategiesPage } from "./components/Strategies/StrategiesPage.tsx";
 import { LabPage } from "./components/Lab/LabPage.tsx";
 import { DashboardPage } from "./components/Dashboard/DashboardPage.tsx";
+import { VaultPage } from "./components/Vault/VaultPage.tsx";
 
 function useDarkMode() {
   const [dark, setDark] = useState(
@@ -40,6 +41,7 @@ export function App() {
                 { to: "/wizard", label: "Wizard" },
                 { to: "/strategies", label: "Strategies" },
                 { to: "/lab", label: "Lab" },
+                { to: "/vault", label: "Vault" },
                 { to: "/dashboard", label: "Dashboard" },
               ].map(({ to, label }) => (
                 <NavLink
@@ -84,6 +86,7 @@ export function App() {
             <Route path="/wizard" element={<WizardPage />} />
             <Route path="/strategies" element={<StrategiesPage />} />
             <Route path="/lab" element={<LabPage />} />
+            <Route path="/vault" element={<VaultPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
           </Routes>
         </main>

@@ -26,12 +26,8 @@ export function useSessionProgress(sessionId: string | null) {
   useEffect(() => {
     if (!sessionId) return;
 
-    const wsPort = (import.meta as Record<string, unknown>).env
-      ? ((import.meta as Record<string, Record<string, string>>).env["VITE_WS_PORT"] ?? "3001")
-      : "3001";
-    const wsHost = (import.meta as Record<string, unknown>).env
-      ? ((import.meta as Record<string, Record<string, string>>).env["VITE_WS_HOST"] ?? "localhost")
-      : "localhost";
+    const wsPort = (import.meta.env["VITE_WS_PORT"] as string | undefined) ?? "3001";
+    const wsHost = (import.meta.env["VITE_WS_HOST"] as string | undefined) ?? "localhost";
 
     const ws = new WebSocket(`ws://${wsHost}:${wsPort}`);
 

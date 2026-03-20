@@ -9,7 +9,9 @@ const validStrategy: StrategyDefinition = {
   indicators: [{ name: "rsi14", type: "rsi", params: { period: 14 } }],
   entry_rules: [{ indicator: "rsi14", condition: "<", value: 30 }],
   exit_rules: [{ indicator: "rsi14", condition: ">", value: 70 }],
-  position_management: { size: 0.02, max_open_trades: 1 },
+  position_management: { size: 0.02, max_open_trades: 1, trailing_sl_atr_mult: 2.0 },
+  entry_rules_short: [],
+  exit_rules_short: [],
 };
 
 function makeProvider(

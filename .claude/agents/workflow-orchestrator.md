@@ -291,7 +291,7 @@ What would you like to do?
 mv engine/strategies/optimizing/<name>.json engine/strategies/validated/<name>.json
 
 # Update lifecycle_status in API
-curl -s -X PUT http://localhost:3001/strategies/<strategy_id> \
+curl -s -X PATCH http://localhost:3001/strategies/<strategy_id>/lifecycle \
   -H "Content-Type: application/json" \
   -d '{"lifecycle_status": "validated"}'
 ```

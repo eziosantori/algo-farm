@@ -135,6 +135,50 @@ export interface LabSessionDetail {
   updated_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// Export helpers
+// ---------------------------------------------------------------------------
+
+export async function downloadExport(
+  id: string,
+  format: "ctrader" | "pine"
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/strategies/${id}/export/${format}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { message?: string }).message ?? `HTTP ${res.status}`
+    );
+  }
+  const blob = await res.blob();
+  const ext = format === "ctrader" ? "cs" : "pine";
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match?.[1] ?? `strategy.${ext}`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function previewExport(
+  id: string,
+  format: "ctrader" | "pine"
+): Promise<{ code: string; filename: string }> {
+  const res = await fetch(
+    `${BASE_URL}/strategies/${id}/export/${format}/preview`
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as { message?: string }).message ?? `HTTP ${res.status}`
+    );
+  }
+  return res.json() as Promise<{ code: string; filename: string }>;
+}
+
 export const api = {
   wizardChat(
     message: string,

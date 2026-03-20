@@ -25,7 +25,10 @@ const sampleStrategy: StrategyDefinition = {
     sl_pips: 20,
     tp_pips: 40,
     max_open_trades: 1,
+    trailing_sl_atr_mult: 2.0,
   },
+  entry_rules_short: [],
+  exit_rules_short: [],
 };
 
 describe("StrategyRepository", () => {
