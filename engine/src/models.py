@@ -39,6 +39,24 @@ class IndicatorDef(BaseModel):
         # Phase B2 — fakeout indicators
         "range_fakeout_short",
         "range_fakeout_long",
+        # Candlestick patterns (float wrappers)
+        "hammer_float",
+        "shooting_star_float",
+        "bullish_engulfing_float",
+        "bearish_engulfing_float",
+        "morning_star_float",
+        "evening_star_float",
+        "piercing_pattern_float",
+        "dark_cloud_cover_float",
+        "bullish_marubozu_float",
+        "bearish_marubozu_float",
+        "three_white_soldiers_float",
+        "three_black_crows_float",
+        "doji_float",
+        "dragonfly_doji_float",
+        "gravestone_doji_float",
+        "spinning_top_float",
+        "harami_float",
     ]
     params: dict[str, Any]
 

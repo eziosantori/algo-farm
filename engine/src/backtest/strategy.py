@@ -53,6 +53,16 @@ class StrategyComposer:
                         )
                     else:
                         indicator = self_bt.I(fn, self_bt.data.Close, timestamps, **ind_params)  # type: ignore[attr-defined]
+                elif "high" in fn_param_names and "low" in fn_param_names and "close" in fn_param_names:
+                    # Candlestick patterns: require OHLC (open_ is first param, excluded by _get_fn_params)
+                    indicator = self_bt.I(  # type: ignore[attr-defined]
+                        fn,
+                        self_bt.data.Open,
+                        self_bt.data.High,
+                        self_bt.data.Low,
+                        self_bt.data.Close,
+                        **ind_params,
+                    )
                 elif "high" in fn_param_names and "low" in fn_param_names:
                     indicator = self_bt.I(  # type: ignore[attr-defined]
                         fn,
