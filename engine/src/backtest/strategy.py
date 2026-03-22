@@ -9,7 +9,7 @@ import pandas as pd
 from backtesting import Strategy  # type: ignore[import-untyped]
 
 from src.backtest.indicators import IndicatorRegistry
-from src.models import PositionManagement, RuleDef, StrategyDefinition, TradingHours
+from src.models import PositionManagement, RuleDef, SignalGate, StrategyDefinition, TradingHours
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,10 @@ class StrategyComposer:
             "initial_sl_dist": None,    # absolute price distance from entry to initial SL
             "scaled_out": False,
             "bars_in_trade": 0,
+            # Signal-gate countdown: {indicator_name: bars_remaining}
+            "gate_countdown": {g.indicator: 0 for g in definition.signal_gates},
+            # Last observed pattern score for position-sizing interpolation
+            "pattern_score": 0.0,
         }
 
         def init(self_bt: Strategy) -> None:  # type: ignore[type-arg]
@@ -40,9 +44,21 @@ class StrategyComposer:
                 fn_param_names = _get_fn_params(fn)
                 ind_params = {k: v for k, v in merged.items() if k in fn_param_names}
                 if "timestamps" in fn_param_names:
-                    # Session indicators — pass timestamps as a positional array
+                    # Session and HTF indicators — pass timestamps as a positional array
                     timestamps = np.array(self_bt.data.index, dtype="datetime64[ns]")  # type: ignore[attr-defined]
-                    if "high" in fn_param_names and "low" in fn_param_names:
+                    if "close" in fn_param_names:
+                        # htf_pattern: first param is open_, rest = high, low, close, timestamps
+                        indicator = self_bt.I(  # type: ignore[attr-defined]
+                            fn,
+                            self_bt.data.Open,
+                            self_bt.data.High,
+                            self_bt.data.Low,
+                            self_bt.data.Close,
+                            timestamps,
+                            **ind_params,
+                        )
+                    elif "high" in fn_param_names and "low" in fn_param_names:
+                        # session indicators with H/L (e.g. session_high, session_low)
                         indicator = self_bt.I(  # type: ignore[attr-defined]
                             fn,
                             self_bt.data.Close,
@@ -52,7 +68,19 @@ class StrategyComposer:
                             **ind_params,
                         )
                     else:
+                        # htf_ema, htf_sma, session_active
                         indicator = self_bt.I(fn, self_bt.data.Close, timestamps, **ind_params)  # type: ignore[attr-defined]
+                elif "close" in fn_param_names:
+                    # Candlestick patterns: _get_fn_params excludes the first arg (open_),
+                    # so 'close' appearing in fn_param_names means OHLC signature.
+                    indicator = self_bt.I(  # type: ignore[attr-defined]
+                        fn,
+                        self_bt.data.Open,
+                        self_bt.data.High,
+                        self_bt.data.Low,
+                        self_bt.data.Close,
+                        **ind_params,
+                    )
                 elif "high" in fn_param_names and "low" in fn_param_names:
                     indicator = self_bt.I(  # type: ignore[attr-defined]
                         fn,
@@ -74,6 +102,32 @@ class StrategyComposer:
 
         def next(self_bt: Strategy) -> None:  # type: ignore[type-arg]
             pm = definition.position_management
+
+            # --- Signal gates: tick down counters; override indicator value when active ---
+            if definition.signal_gates:
+                for gate in definition.signal_gates:
+                    ind = getattr(self_bt, gate.indicator, None)
+                    if ind is None:
+                        continue
+                    raw = float(ind[-1])
+                    if not np.isnan(raw) and raw > 0:
+                        # Pattern fired this bar — reset countdown
+                        state["gate_countdown"][gate.indicator] = gate.active_for_bars
+                    elif state["gate_countdown"].get(gate.indicator, 0) > 0:
+                        # Pattern fired on a previous bar — keep synthetic value alive
+                        state["gate_countdown"][gate.indicator] -= 1
+                    # (if countdown == 0 and raw == 0, signal naturally expires)
+
+            # --- Pattern-score sizing: capture highest pattern score for entry sizing ---
+            state["pattern_score"] = 0.0
+            if pm.risk_pct_min is not None and pm.risk_pct_max is not None:
+                for ind_def in definition.indicators:
+                    ind = getattr(self_bt, ind_def.name, None)
+                    if ind is None:
+                        continue
+                    val = float(ind[-1])
+                    if not np.isnan(val) and 0.0 < val <= 1.0:
+                        state["pattern_score"] = max(state["pattern_score"], val)
 
             # --- Session gate: respect trading_hours before any other logic ---
             if pm.trading_hours is not None:
@@ -97,7 +151,7 @@ class StrategyComposer:
                     state["initial_sl_dist"] = None
 
                 # --- Long entry ---
-                if _evaluate_rules(self_bt, definition.entry_rules):
+                if _evaluate_rules(self_bt, definition.entry_rules, state["gate_countdown"]):
                     price = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
 
                     sl: float | None = None
@@ -127,11 +181,11 @@ class StrategyComposer:
                     state["scaled_out"] = False
                     state["bars_in_trade"] = 0
 
-                    trade_size = _compute_trade_size(pm, price, sl, float(self_bt.equity))  # type: ignore[attr-defined]
+                    trade_size = _compute_trade_size(pm, price, sl, float(self_bt.equity), state["pattern_score"])  # type: ignore[attr-defined]
                     self_bt.buy(size=trade_size, sl=sl, tp=tp)  # type: ignore[attr-defined]
 
                 # --- Short entry (only when no long fired this bar) ---
-                elif definition.entry_rules_short and _evaluate_rules(self_bt, definition.entry_rules_short):
+                elif definition.entry_rules_short and _evaluate_rules(self_bt, definition.entry_rules_short, state["gate_countdown"]):
                     price = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
 
                     sl_short: float | None = None
@@ -161,7 +215,7 @@ class StrategyComposer:
                     state["scaled_out"] = False
                     state["bars_in_trade"] = 0
 
-                    trade_size = _compute_trade_size(pm, price, sl_short, float(self_bt.equity))  # type: ignore[attr-defined]
+                    trade_size = _compute_trade_size(pm, price, sl_short, float(self_bt.equity), state["pattern_score"])  # type: ignore[attr-defined]
                     self_bt.sell(size=trade_size, sl=sl_short, tp=tp_short)  # type: ignore[attr-defined]
 
             else:
@@ -235,7 +289,7 @@ class StrategyComposer:
                     if (is_short and definition.exit_rules_short)
                     else definition.exit_rules
                 )
-                if _evaluate_rules(self_bt, exit_rules):
+                if _evaluate_rules(self_bt, exit_rules, state["gate_countdown"]):
                     self_bt.position.close()  # type: ignore[attr-defined]
 
         return type(
@@ -250,24 +304,31 @@ def _compute_trade_size(
     price: float,
     sl: float | None,
     equity: float,
+    pattern_score: float = 0.0,
 ) -> float:
     """Compute position size to pass to Strategy.buy().
 
     Risk-based sizing (when ``pm.risk_pct`` is set and a SL is defined):
       - ``units = (equity × risk_pct) / sl_distance``
       - Returns an integer-like float representing units of the instrument.
-      - Example: equity=10 000, risk_pct=0.01, SL 20 pips (0.0020)
-        → units = 100 / 0.0020 = 50 000 units.
 
-    Fallback (``pm.risk_pct`` is None, or no SL provided, or sl_distance ≤ 0):
-      - Returns ``pm.size`` as a fractional equity allocation (0 < size < 1).
-      - backtesting.py interprets fractions as "invest size × equity".
+    Pattern-score sizing (when ``pm.risk_pct_min`` and ``pm.risk_pct_max`` are set):
+      - ``effective_risk = risk_pct_min + score × (risk_pct_max - risk_pct_min)``
+      - Overrides ``pm.risk_pct`` when a pattern score is available.
+
+    Fallback (no risk_pct / no SL):
+      - Returns ``pm.size`` as a fractional equity allocation.
     """
-    if pm.risk_pct is not None and sl is not None:
-        sl_distance = abs(price - sl)   # works for both long (sl < price) and short (sl > price)
+    # Resolve effective risk_pct: pattern-score interpolation takes priority
+    effective_risk: float | None = pm.risk_pct
+    if pm.risk_pct_min is not None and pm.risk_pct_max is not None and 0.0 <= pattern_score <= 1.0:
+        effective_risk = pm.risk_pct_min + pattern_score * (pm.risk_pct_max - pm.risk_pct_min)
+
+    if effective_risk is not None and sl is not None:
+        sl_distance = abs(price - sl)
         if sl_distance > 0:
-            units = (equity * pm.risk_pct) / sl_distance
-            return max(1, round(units))  # backtesting.py requires a whole number when size > 1
+            units = (equity * effective_risk) / sl_distance
+            return max(1, round(units))
     return pm.size
 
 
@@ -291,8 +352,16 @@ def _find_indicator_by_type(
     return None
 
 
-def _evaluate_rules(strategy: Strategy, rules: list[RuleDef]) -> bool:  # type: ignore[type-arg]
-    """Evaluate all rules (AND logic). Returns True if all pass."""
+def _evaluate_rules(
+    strategy: Strategy,  # type: ignore[type-arg]
+    rules: list[RuleDef],
+    gate_countdown: dict[str, int] | None = None,
+) -> bool:
+    """Evaluate all rules (AND logic). Returns True if all pass.
+
+    When *gate_countdown* is provided, any indicator whose countdown > 0 is
+    treated as still active (score preserved from the bar it fired).
+    """
     if not rules:
         return False
     for rule in rules:
@@ -301,8 +370,14 @@ def _evaluate_rules(strategy: Strategy, rules: list[RuleDef]) -> bool:  # type: 
             logger.warning("Indicator '%s' not found on strategy", rule.indicator)
             return False
         current = float(ind[-1])
+        # If the indicator is under a signal gate and the countdown > 0, use the
+        # raw value as-is (it was already non-zero when it fired).
         if np.isnan(current):
-            return False
+            if gate_countdown and gate_countdown.get(rule.indicator, 0) > 0:
+                # Use last known non-NaN placeholder (1.0) — gate is active
+                current = 1.0
+            else:
+                return False
         if not _check_condition(strategy, rule, current):
             return False
     return True

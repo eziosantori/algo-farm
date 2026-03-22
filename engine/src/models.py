@@ -39,8 +39,39 @@ class IndicatorDef(BaseModel):
         # Phase B2 — fakeout indicators
         "range_fakeout_short",
         "range_fakeout_long",
+        # Phase D — candlestick patterns (intensity score, float [0,1])
+        "hammer",
+        "shooting_star",
+        "bullish_engulfing",
+        "bearish_engulfing",
+        "morning_star",
+        "evening_star",
+        "piercing_pattern",
+        "dark_cloud_cover",
+        "bullish_marubozu",
+        "bearish_marubozu",
+        "three_white_soldiers",
+        "three_black_crows",
+        "doji",
+        "dragonfly_doji",
+        "gravestone_doji",
+        "spinning_top",
+        "harami",
+        # Phase D — HTF pattern wrapper
+        "htf_pattern",
     ]
     params: dict[str, Any]
+
+
+class SignalGate(BaseModel):
+    """Keep a pattern signal active for N bars after it fires.
+
+    Once a pattern indicator fires (score > 0), StrategyComposer holds the
+    value for ``active_for_bars`` bars so entry rules can still trigger.
+    """
+
+    indicator: str       # must match a name in StrategyDefinition.indicators
+    active_for_bars: int  # how many bars the signal stays "on" after detection
 
 
 class RuleDef(BaseModel):
@@ -72,7 +103,9 @@ class PositionManagement(BaseModel):
     tp_pips: float | None = None
     max_open_trades: int = 1
     # M9 — Advanced Position Management (all optional, backward-compatible)
-    risk_pct: float | None = None                               # risk % of equity per trade (e.g. 0.01 = 1%); requires a defined SL
+    risk_pct: float | None = None                               # base risk % of equity per trade; requires a defined SL
+    risk_pct_min: float | None = None                           # D4 pattern-sizing: minimum risk % (used with risk_pct_max)
+    risk_pct_max: float | None = None                           # D4 pattern-sizing: maximum risk % (interpolated by pattern score)
     sl_atr_mult: float | None = None                            # ATR-based SL at entry: entry ± atr × sl_atr_mult
     tp_atr_mult: float | None = None                            # ATR-based TP at entry: entry + atr × tp_atr_mult
     trailing_sl: Literal["atr", "supertrend"] | None = None    # trailing stop type
@@ -93,6 +126,8 @@ class StrategyDefinition(BaseModel):
     # Phase C — short-side execution (optional; empty = long-only strategy)
     entry_rules_short: list[RuleDef] = []
     exit_rules_short: list[RuleDef] = []
+    # Phase D — signal gates: keep pattern signals active for N bars
+    signal_gates: list[SignalGate] = []
 
 
 @dataclass
