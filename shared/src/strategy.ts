@@ -25,6 +25,30 @@ export const IndicatorTypeSchema = z.enum([
   // Phase B2 — fakeout indicators
   "range_fakeout_short",
   "range_fakeout_long",
+  // Phase C / M8 — additional indicators
+  "roc",
+  "volume_sma",
+  "htf_ema",
+  "htf_sma",
+  // Phase D — candlestick patterns
+  "hammer",
+  "shooting_star",
+  "bullish_engulfing",
+  "bearish_engulfing",
+  "morning_star",
+  "evening_star",
+  "piercing_pattern",
+  "dark_cloud_cover",
+  "bullish_marubozu",
+  "bearish_marubozu",
+  "three_white_soldiers",
+  "three_black_crows",
+  "doji",
+  "dragonfly_doji",
+  "gravestone_doji",
+  "spinning_top",
+  "harami",
+  "htf_pattern",
 ]);
 
 export type IndicatorType = z.infer<typeof IndicatorTypeSchema>;
@@ -87,9 +111,41 @@ export const PositionManagementSchema = z.object({
   scale_out: ScaleOutSchema.nullable().optional(),
   time_exit_bars: z.number().int().positive().nullable().optional(),
   trading_hours: TradingHoursSchema.nullable().optional(),
+  // Phase D — dynamic risk sizing
+  risk_pct_min: z.number().positive().max(1).optional(),
+  risk_pct_max: z.number().positive().max(1).optional(),
+  risk_pct_group: z.string().optional(),
 });
 
 export type PositionManagement = z.infer<typeof PositionManagementSchema>;
+
+// Phase D — advanced execution sub-schemas
+export const SignalGateSchema = z.object({
+  indicator: z.string(),
+  active_for_bars: z.number().int().positive(),
+});
+
+export const SuppressionGateSchema = z.object({
+  indicator: z.string(),
+  suppress_for_bars: z.number().int().positive(),
+  threshold: z.number().default(0.0),
+});
+
+export const TriggerHoldSchema = z.object({
+  indicator: z.string(),
+  hold_for_bars: z.number().int().positive(),
+});
+
+export const PatternGroupSchema = z.object({
+  name: z.string(),
+  patterns: z.array(z.string()),
+  min_score: z.number().default(1.0),
+});
+
+export type SignalGate = z.infer<typeof SignalGateSchema>;
+export type SuppressionGate = z.infer<typeof SuppressionGateSchema>;
+export type TriggerHold = z.infer<typeof TriggerHoldSchema>;
+export type PatternGroup = z.infer<typeof PatternGroupSchema>;
 
 export const StrategyDefinitionSchema = z.object({
   version: z.string(),
@@ -102,6 +158,11 @@ export const StrategyDefinitionSchema = z.object({
   // Phase C — short-side execution (optional; empty = long-only)
   entry_rules_short: z.array(RuleDefSchema).optional().default([]),
   exit_rules_short: z.array(RuleDefSchema).optional().default([]),
+  // Phase D — advanced execution
+  signal_gates: z.array(SignalGateSchema).optional().default([]),
+  pattern_groups: z.array(PatternGroupSchema).optional().default([]),
+  suppression_gates: z.array(SuppressionGateSchema).optional().default([]),
+  trigger_holds: z.array(TriggerHoldSchema).optional().default([]),
 });
 
 export type StrategyDefinition = z.infer<typeof StrategyDefinitionSchema>;

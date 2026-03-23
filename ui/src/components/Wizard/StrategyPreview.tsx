@@ -99,6 +99,16 @@ export function StrategyPreview({ strategy }: Props) {
     { label: "TP", value: pm.tp_pips != null ? `${pm.tp_pips} pips` : "—" },
   ];
 
+  const signalGates = strategy.signal_gates ?? [];
+  const suppressionGates = strategy.suppression_gates ?? [];
+  const triggerHolds = strategy.trigger_holds ?? [];
+  const patternGroups = strategy.pattern_groups ?? [];
+  const hasPhaseD =
+    signalGates.length > 0 ||
+    suppressionGates.length > 0 ||
+    triggerHolds.length > 0 ||
+    patternGroups.length > 0;
+
   return (
     <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
       {/* Header */}
@@ -196,7 +206,110 @@ export function StrategyPreview({ strategy }: Props) {
                 </div>
               ))}
             </div>
+            {(pm.risk_pct_min != null || pm.risk_pct_max != null || pm.risk_pct_group != null) && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap gap-3 text-xs text-gray-600 dark:text-gray-400">
+                {pm.risk_pct_group != null && (
+                  <span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Group:</span>{" "}
+                    <code className="font-mono">{pm.risk_pct_group}</code>
+                  </span>
+                )}
+                {pm.risk_pct_min != null && (
+                  <span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Risk min:</span>{" "}
+                    <code className="font-mono">{(pm.risk_pct_min * 100).toFixed(1)}%</code>
+                  </span>
+                )}
+                {pm.risk_pct_max != null && (
+                  <span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Risk max:</span>{" "}
+                    <code className="font-mono">{(pm.risk_pct_max * 100).toFixed(1)}%</code>
+                  </span>
+                )}
+              </div>
+            )}
           </Section>
+
+          {/* Phase D — advanced execution */}
+          {hasPhaseD && (
+            <Section
+              title="Advanced execution"
+              color="border-violet-200 dark:border-violet-800/50 bg-violet-50 dark:bg-violet-950/20"
+            >
+              <div className="grid gap-2">
+                {patternGroups.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-violet-700 dark:text-violet-300 mb-1">Pattern groups</p>
+                    <div className="flex flex-wrap gap-2">
+                      {patternGroups.map((pg) => (
+                        <span
+                          key={pg.name}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300"
+                        >
+                          <span className="font-semibold">{pg.name}</span>
+                          <span className="opacity-60">= [{pg.patterns.join(", ")}]</span>
+                          {pg.min_score !== 1.0 && (
+                            <span className="opacity-60">min={pg.min_score}</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {signalGates.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-violet-700 dark:text-violet-300 mb-1">Signal gates</p>
+                    <div className="flex flex-wrap gap-2">
+                      {signalGates.map((sg, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300"
+                        >
+                          <code className="font-mono font-semibold">{sg.indicator}</code>
+                          <span className="opacity-60">active {sg.active_for_bars}b</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {suppressionGates.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-violet-700 dark:text-violet-300 mb-1">Suppression gates</p>
+                    <div className="flex flex-wrap gap-2">
+                      {suppressionGates.map((sg, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300"
+                        >
+                          <code className="font-mono font-semibold">{sg.indicator}</code>
+                          <span className="opacity-60">suppress {sg.suppress_for_bars}b</span>
+                          {sg.threshold !== 0 && (
+                            <span className="opacity-60">thr={sg.threshold}</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {triggerHolds.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-violet-700 dark:text-violet-300 mb-1">Trigger holds</p>
+                    <div className="flex flex-wrap gap-2">
+                      {triggerHolds.map((th, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300"
+                        >
+                          <code className="font-mono font-semibold">{th.indicator}</code>
+                          <span className="opacity-60">hold {th.hold_for_bars}b</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
         </div>
       )}
     </div>

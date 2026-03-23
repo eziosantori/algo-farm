@@ -12,6 +12,10 @@ const validStrategy: StrategyDefinition = {
   position_management: { size: 0.02, max_open_trades: 1, trailing_sl_atr_mult: 2.0 },
   entry_rules_short: [],
   exit_rules_short: [],
+  signal_gates: [],
+  pattern_groups: [],
+  suppression_gates: [],
+  trigger_holds: [],
 };
 
 describe("OpenRouterProvider", () => {

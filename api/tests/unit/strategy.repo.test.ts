@@ -29,6 +29,10 @@ const sampleStrategy: StrategyDefinition = {
   },
   entry_rules_short: [],
   exit_rules_short: [],
+  signal_gates: [],
+  pattern_groups: [],
+  suppression_gates: [],
+  trigger_holds: [],
 };
 
 describe("StrategyRepository", () => {
