@@ -74,6 +74,22 @@ class SignalGate(BaseModel):
     active_for_bars: int  # how many bars the signal stays "on" after detection
 
 
+class PatternGroup(BaseModel):
+    """Aggregate multiple pattern indicators into a single composite score.
+
+    The group evaluates to ``sum(score_i for i in patterns)`` at each bar
+    (gate-adjusted values included). Use in entry/exit rules like any other
+    indicator — e.g. ``{"indicator": "bullish_confirm", "condition": ">=", "value": 1.0}``.
+
+    A sum ≥ 1.0 means at least one textbook-perfect pattern fired, or two
+    partial patterns together reached the same confidence level.
+    """
+
+    name: str             # virtual indicator name — used in entry/exit rules
+    patterns: list[str]   # indicator names to aggregate (must be in StrategyDefinition.indicators)
+    min_score: float = 1.0  # informational default; the actual threshold is set in the RuleDef value
+
+
 class RuleDef(BaseModel):
     indicator: str
     condition: str
@@ -128,6 +144,8 @@ class StrategyDefinition(BaseModel):
     exit_rules_short: list[RuleDef] = []
     # Phase D — signal gates: keep pattern signals active for N bars
     signal_gates: list[SignalGate] = []
+    # Phase D — pattern groups: aggregate multiple pattern scores into one composite condition
+    pattern_groups: list[PatternGroup] = []
 
 
 @dataclass

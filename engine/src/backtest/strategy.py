@@ -9,7 +9,7 @@ import pandas as pd
 from backtesting import Strategy  # type: ignore[import-untyped]
 
 from src.backtest.indicators import IndicatorRegistry
-from src.models import PositionManagement, RuleDef, SignalGate, StrategyDefinition, TradingHours
+from src.models import PatternGroup, PositionManagement, RuleDef, SignalGate, StrategyDefinition, TradingHours
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,24 @@ class StrategyComposer:
                         state["gate_countdown"][gate.indicator] -= 1
                     # (if countdown == 0 and raw == 0, signal naturally expires)
 
+            # --- Pattern groups: sum gate-adjusted scores for each group ---
+            group_values: dict[str, float] = {}
+            for grp in definition.pattern_groups:
+                total = 0.0
+                for pname in grp.patterns:
+                    ind = getattr(self_bt, pname, None)
+                    if ind is None:
+                        continue
+                    val = float(ind[-1])
+                    # apply gate: if indicator is under an active countdown, treat as 1.0
+                    if np.isnan(val) or val == 0.0:
+                        if state["gate_countdown"].get(pname, 0) > 0:
+                            val = 1.0
+                        elif np.isnan(val):
+                            val = 0.0
+                    total += val
+                group_values[grp.name] = total
+
             # --- Pattern-score sizing: capture highest pattern score for entry sizing ---
             state["pattern_score"] = 0.0
             if pm.risk_pct_min is not None and pm.risk_pct_max is not None:
@@ -151,7 +169,7 @@ class StrategyComposer:
                     state["initial_sl_dist"] = None
 
                 # --- Long entry ---
-                if _evaluate_rules(self_bt, definition.entry_rules, state["gate_countdown"]):
+                if _evaluate_rules(self_bt, definition.entry_rules, state["gate_countdown"], group_values):
                     price = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
 
                     sl: float | None = None
@@ -185,7 +203,7 @@ class StrategyComposer:
                     self_bt.buy(size=trade_size, sl=sl, tp=tp)  # type: ignore[attr-defined]
 
                 # --- Short entry (only when no long fired this bar) ---
-                elif definition.entry_rules_short and _evaluate_rules(self_bt, definition.entry_rules_short, state["gate_countdown"]):
+                elif definition.entry_rules_short and _evaluate_rules(self_bt, definition.entry_rules_short, state["gate_countdown"], group_values):
                     price = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
 
                     sl_short: float | None = None
@@ -289,7 +307,7 @@ class StrategyComposer:
                     if (is_short and definition.exit_rules_short)
                     else definition.exit_rules
                 )
-                if _evaluate_rules(self_bt, exit_rules, state["gate_countdown"]):
+                if _evaluate_rules(self_bt, exit_rules, state["gate_countdown"], group_values):
                     self_bt.position.close()  # type: ignore[attr-defined]
 
         return type(
@@ -356,27 +374,36 @@ def _evaluate_rules(
     strategy: Strategy,  # type: ignore[type-arg]
     rules: list[RuleDef],
     gate_countdown: dict[str, int] | None = None,
+    group_values: dict[str, float] | None = None,
 ) -> bool:
     """Evaluate all rules (AND logic). Returns True if all pass.
 
     When *gate_countdown* is provided, any indicator whose countdown > 0 is
     treated as still active (score preserved from the bar it fired).
+
+    When *group_values* is provided, rules that reference a pattern group name
+    (not a real indicator attribute) are resolved from the pre-computed sums.
     """
     if not rules:
         return False
     for rule in rules:
         ind = getattr(strategy, rule.indicator, None)
         if ind is None:
-            logger.warning("Indicator '%s' not found on strategy", rule.indicator)
-            return False
-        current = float(ind[-1])
-        # If the indicator is under a signal gate and the countdown > 0, treat
-        # the signal as still active (patterns return 0.0 on non-firing bars, not NaN).
-        if gate_countdown and gate_countdown.get(rule.indicator, 0) > 0:
-            if np.isnan(current) or current == 0.0:
-                current = 1.0
-        elif np.isnan(current):
-            return False
+            # Not a real indicator — check pattern groups
+            if group_values and rule.indicator in group_values:
+                current = group_values[rule.indicator]
+            else:
+                logger.warning("Indicator '%s' not found on strategy", rule.indicator)
+                return False
+        else:
+            current = float(ind[-1])
+            # If the indicator is under a signal gate and the countdown > 0, treat
+            # the signal as still active (patterns return 0.0 on non-firing bars, not NaN).
+            if gate_countdown and gate_countdown.get(rule.indicator, 0) > 0:
+                if np.isnan(current) or current == 0.0:
+                    current = 1.0
+            elif np.isnan(current):
+                return False
         if not _check_condition(strategy, rule, current):
             return False
     return True
