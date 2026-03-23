@@ -47,7 +47,8 @@ INSTRUMENTS: dict[str, dict[str, str]] = {
     "JPN225": {"feed": "jpnidxjpy",     "description": "Nikkei 225 Index"},
     "AUS200": {"feed": "ausidxaud",     "description": "ASX 200 Index"},
     # --- US stocks (top NASDAQ / liquid names) ------------------------------
-    # Note: no volume data available from Dukascopy for equities (Volume=0)
+    # Local equity parquet files include a non-zero Volume column, so
+    # volume-based filters remain usable in the engine.
     "AAPL":   {"feed": "aaplususd",     "description": "Apple Inc."},
     "MSFT":   {"feed": "msftususd",     "description": "Microsoft Corp."},
     "NVDA":   {"feed": "nvdaususd",     "description": "NVIDIA Corp."},

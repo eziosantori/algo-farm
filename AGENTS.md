@@ -425,6 +425,43 @@ mypy engine/src --strict
 
 ---
 
+## Candlestick pattern design principles
+
+Empirically validated on 7 US stocks (D1) across 10+ iterations (Phase D integration tests).
+
+### How patterns interact with entry triggers
+
+On D1/H4, a breakout trigger (e.g. Bollinger cross) and a bullish pattern (marubozu, three white soldiers) **rarely coincide on the same bar**. Using patterns as positive AND conditions in `entry_rules` consistently collapses trade frequency — sometimes to 0.
+
+**Three roles patterns can play:**
+
+| Role | How to implement | Effect |
+|------|-----------------|--------|
+| **Anti-filter (negative AND)** | `{"indicator":"doji14","condition":"<","value":0.2}` | ✅ Blocks indecision bars without killing frequency |
+| **Sizing driver** | `risk_pct_min`/`risk_pct_max` + `risk_pct_group` → `PatternGroup` | ✅ Amplifies winners, no frequency cost |
+| **Positive AND filter** | `{"indicator":"marub","condition":">","value":0.0}` | ❌ Severe trade reduction on D1/H4 |
+
+**`TriggerHold` does NOT fix the timing mismatch** for positive AND patterns. Even with a 3–5 bar hold window, `marub > 0` remains too restrictive on daily data.
+
+**Recommended pattern wiring for breakout strategies:**
+
+```json
+"entry_rules": [
+  { "indicator": "px",      "condition": "crosses_above", "compare_to": "bbu" },
+  { "indicator": "doji14",  "condition": "<", "value": 0.2 },
+  { "indicator": "harami14","condition": "<", "value": 0.2 }
+],
+"pattern_groups": [{ "name": "bull_confirm", "patterns": ["marub", "soldiers"] }],
+"position_management": {
+  "risk_pct_min": 0.005, "risk_pct_max": 0.02,
+  "risk_pct_group": "bull_confirm"
+}
+```
+
+Negative patterns filter bad setups. Positive patterns scale position size. Neither reduces trade count.
+
+---
+
 ## Key documents
 
 | Document | When to read |

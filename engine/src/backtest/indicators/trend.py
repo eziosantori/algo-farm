@@ -1,4 +1,4 @@
-"""Trend indicators: sma, ema, macd, supertrend, htf_ema, htf_sma."""
+"""Trend indicators: sma, ema, macd, supertrend, htf_ema, htf_sma, htf_pattern."""
 from __future__ import annotations
 
 import numpy as np
@@ -279,3 +279,71 @@ def htf_sma(
     timeframe:  Target higher timeframe (e.g. "H4", "D1").
     """
     return _resample_and_compute(close, timestamps, timeframe, "sma", period)
+
+
+@IndicatorRegistry.register("htf_pattern")
+def htf_pattern(
+    open_: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    close: np.ndarray,
+    timestamps: np.ndarray,
+    base_pattern: str = "hammer",
+    timeframe: str = "D1",
+) -> np.ndarray:
+    """Evaluate a candlestick pattern on a higher timeframe and forward-fill to base TF.
+
+    The pattern score (float [0, 1]) is computed on the resampled HTF OHLC bars,
+    then forward-filled onto every base-timeframe bar until the next HTF bar closes.
+
+    Parameters
+    ----------
+    open_:        Open price array at the base timeframe.
+    high:         High price array at the base timeframe.
+    low:          Low price array at the base timeframe.
+    close:        Close price array at the base timeframe.
+    timestamps:   Datetime64 array aligned with OHLC.
+    base_pattern: Name of a registered candlestick pattern (e.g. "hammer").
+    timeframe:    Target higher timeframe (e.g. "D1", "H4").
+    """
+    from src.backtest.indicators import IndicatorRegistry as _Reg
+
+    if timeframe not in _TF_MINUTES:
+        raise ValueError(f"Unknown timeframe '{timeframe}'. Supported: {list(_TF_MINUTES.keys())}")
+
+    base_tf = _detect_base_tf(timestamps)
+    base_min = _TF_MINUTES[base_tf]
+    target_min = _TF_MINUTES[timeframe]
+
+    if target_min <= base_min:
+        raise ValueError(
+            f"HTF timeframe '{timeframe}' ({target_min}m) must be larger "
+            f"than base timeframe '{base_tf}' ({base_min}m)"
+        )
+
+    ts_index = pd.DatetimeIndex(timestamps)
+    resample_rule = f"{target_min}min" if target_min < 1440 else f"{target_min // 1440}D"
+    if timeframe == "W1":
+        resample_rule = "W-FRI"
+
+    df = pd.DataFrame(
+        {"open": open_.astype(float), "high": high.astype(float), "low": low.astype(float), "close": close.astype(float)},
+        index=ts_index,
+    )
+
+    htf_df = df.resample(resample_rule).agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+
+    if len(htf_df) < 1:
+        return np.full(len(close), np.nan, dtype=float)
+
+    pattern_fn = _Reg.get(base_pattern)
+    htf_scores = pattern_fn(
+        htf_df["open"].values,
+        htf_df["high"].values,
+        htf_df["low"].values,
+        htf_df["close"].values,
+    )
+
+    htf_series = pd.Series(htf_scores, index=htf_df.index)
+    result_series = htf_series.reindex(ts_index, method="ffill")
+    return result_series.to_numpy(dtype=float)

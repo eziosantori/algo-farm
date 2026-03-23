@@ -508,8 +508,48 @@ concurrently, reducing the optimisation loop time.
 - [x] `engine/tests/unit/test_position_sizing.py` — updated: short SL above entry now computes correctly (not fallback)
 - [x] **192/192 Python tests passing** (+9 new)
 
-### Next phases (planned)
-- Phase D (future): multi-timeframe fusion, stateful event sequencing for SMC/Order Block patterns
+---
+
+## FOREX Strategies Integration — Phase D — Candlestick Pattern Engine ✅ DONE
+
+> Implemented on branch `feat/phase-d-candlestick-engine`. Signal gate bug fixed (2026-03-22).
+> Empirically validated on 7 US stocks D1 (NVDA, MSFT, AAPL, AMZN, TSLA, META, GOOGL).
+> Best strategy: `engine/strategies/optimizing/breakout_long_patterns_v1.json`
+> Robustness: MSFT (A), AAPL (A), GOOGL (B) → GO; AMZN/META/NVDA/TSLA → NO-GO.
+> Not auto-promoted (3/7 GO, below 2/3 threshold). Promoted to `optimizing/` for further work.
+
+### D1 — Pattern Intensity Score (float [0,1]) ✅
+
+- [x] Vectorized all 17 patterns in `engine/src/backtest/indicators/patterns.py` (NumPy, no loops)
+- [x] All patterns return float in [0, 1] (0.0 = no pattern, 1.0 = perfect textbook)
+- [x] Updated `IndicatorDef.type` Literal — base names only, no `*_float` variants
+- [x] 16 unit tests in `tests/unit/test_patterns.py`: float range, score sanity, zero cases, length, registry
+
+### D2 — N-bar Lookback Window (pattern stays active for N bars) ✅
+
+- [x] `SignalGate` model in `models.py`: `{indicator, active_for_bars}`
+- [x] `signal_gates: list[SignalGate] = []` field on `StrategyDefinition` (backward-compatible)
+- [x] Countdown dict in `StrategyComposer.next()`: ticks down from `active_for_bars` when pattern fires
+- [x] Bug fix: gate now correctly extends 0.0 signals (not just NaN) — patterns return 0.0 on non-firing bars
+- [x] `tests/integration/test_signal_gates.py` — 8 tests covering gate behavior, model validation, backward compat
+
+### D3 — HTF Pattern Support ✅
+
+- [x] `htf_pattern` registered in `IndicatorRegistry` via `engine/src/backtest/indicators/trend.py`
+- [x] Resamples OHLC to higher TF, applies named pattern function, forward-fills score to base TF
+- [x] Accepts `base_pattern` (indicator name), `timeframe` (e.g. "D1") params
+
+### D4 — Pattern Score → Position Sizing (use case b) ✅
+
+- [x] `risk_pct_min` / `risk_pct_max` added to `PositionManagement` (both default None, backward-compatible)
+- [x] `_compute_trade_size` interpolates: `effective_risk = risk_pct_min + score × (risk_pct_max - risk_pct_min)`
+- [x] Integration test: `test_pattern_sizing_interpolation` verifies score 0/0.5/1 → size low/mid/high
+- [x] Note: gate-triggered entries use score=1.0, so pattern sizing is most effective without gates
+
+### D5 — Merge feature/candlestick-patterns ⬜
+
+- [ ] All existing 200+ tests still pass (run full suite before merge)
+- [ ] Merge `feat/phase-d-candlestick-engine` → `main`
 
 ---
 
@@ -532,6 +572,57 @@ concurrently, reducing the optimisation loop time.
 - [ ] M4 — React Export UI: format selector, parameter mapper, code preview + download
 - [ ] M5 — Unit tests: parameter injection into templates
 - [ ] M6 — Integration test: export → validate generated code syntax
+
+---
+
+## Setup Quality Scoring ⬜ FUTURE FEATURE
+
+> Killer feature: qualify each entry as A / B / C / D based on how many confirming signals
+> align at entry time. Higher grade = larger position and/or tighter risk.
+> Prerequisite: Phase D (pattern scores + signal gates) must be validated empirically first.
+
+### QS1 — Design: SetupScore concept ⬜
+
+- [ ] Define `SetupScoreConfig` in models.py:
+      ```python
+      class ScoreComponent(BaseModel):
+          indicator: str       # name of any indicator in the strategy
+          condition: str       # same condition operators as RuleDef
+          value: float | None  # threshold
+          weight: float = 1.0  # contribution to total score
+
+      class SetupScoreConfig(BaseModel):
+          components: list[ScoreComponent]
+          grade_thresholds: dict[str, float]  # e.g. {"A": 0.85, "B": 0.65, "C": 0.45}
+      ```
+- [ ] Add optional `setup_score` field to `StrategyDefinition`
+- [ ] Score = Σ(component_score × weight) / Σ(weights) — normalized to [0, 1]
+
+### QS2 — Engine: compute and record grade at entry ⬜
+
+- [ ] In `StrategyComposer.next()`, compute SetupScore at each entry bar
+- [ ] Store grade (A/B/C/D) in the trade record (`TradeResult` dataclass)
+- [ ] Expose grade in JSONL output (`result` messages) and BacktestMetrics
+
+### QS3 — Metrics: grade-stratified analysis ⬜
+
+- [ ] In `BacktestMetrics`, add `metrics_by_grade: dict[str, BacktestMetrics]`
+      (one sub-metrics object per grade: win rate, avg return, profit factor)
+- [ ] CLI output and JSONL include grade breakdown
+- [ ] Dashboard table: grade column + filter by grade
+
+### QS4 — Sizing: grade → risk_pct mapping ⬜
+
+- [ ] Extend PositionManagement with `risk_pct_by_grade: dict[str, float]`
+      e.g. `{"A": 0.02, "B": 0.01, "C": 0.005, "D": 0.0}` (D = skip trade)
+- [ ] `StrategyComposer` selects risk_pct from grade at entry time
+- [ ] Test: A-grade trades → 2× size vs C-grade
+
+### QS5 — Dashboard: setup quality visualization ⬜
+
+- [ ] Bar chart: trade distribution by grade
+- [ ] Equity curve colored by grade (A=green, B=yellow, C=orange, D=red)
+- [ ] Grade filter on trade table
 
 ---
 
