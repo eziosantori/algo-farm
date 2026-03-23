@@ -370,14 +370,13 @@ def _evaluate_rules(
             logger.warning("Indicator '%s' not found on strategy", rule.indicator)
             return False
         current = float(ind[-1])
-        # If the indicator is under a signal gate and the countdown > 0, use the
-        # raw value as-is (it was already non-zero when it fired).
-        if np.isnan(current):
-            if gate_countdown and gate_countdown.get(rule.indicator, 0) > 0:
-                # Use last known non-NaN placeholder (1.0) — gate is active
+        # If the indicator is under a signal gate and the countdown > 0, treat
+        # the signal as still active (patterns return 0.0 on non-firing bars, not NaN).
+        if gate_countdown and gate_countdown.get(rule.indicator, 0) > 0:
+            if np.isnan(current) or current == 0.0:
                 current = 1.0
-            else:
-                return False
+        elif np.isnan(current):
+            return False
         if not _check_condition(strategy, rule, current):
             return False
     return True
