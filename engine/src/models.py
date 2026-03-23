@@ -74,6 +74,35 @@ class SignalGate(BaseModel):
     active_for_bars: int  # how many bars the signal stays "on" after detection
 
 
+class SuppressionGate(BaseModel):
+    """Block new entries for N bars whenever a pattern score exceeds a threshold.
+
+    Use for indecision / reversal patterns (doji, harami, spinning_top) to prevent
+    entering a breakout trade when the bar signals uncertainty.
+
+    Unlike SignalGate (which *enables* a signal for N bars), SuppressionGate
+    *disables* all new entries for N bars after the pattern fires.
+    """
+
+    indicator: str          # must match a name in StrategyDefinition.indicators
+    suppress_for_bars: int  # how many bars to block entries after the pattern fires
+    threshold: float = 0.0  # suppress when indicator score > threshold
+
+
+class TriggerHold(BaseModel):
+    """Keep a ``crosses_above`` / ``crosses_below`` condition active for N bars.
+
+    When a cross fires on bar T, the condition is treated as True through bar T+N-1,
+    so other confirming conditions (volume, trend direction, patterns) have time to
+    line up after the initial trigger.
+
+    Only applies to entry rules, not exit rules.
+    """
+
+    indicator: str        # must match a rule in StrategyDefinition.entry_rules
+    hold_for_bars: int    # how many bars (including the cross bar) the condition stays active
+
+
 class PatternGroup(BaseModel):
     """Aggregate multiple pattern indicators into a single composite score.
 
@@ -122,6 +151,7 @@ class PositionManagement(BaseModel):
     risk_pct: float | None = None                               # base risk % of equity per trade; requires a defined SL
     risk_pct_min: float | None = None                           # D4 pattern-sizing: minimum risk % (used with risk_pct_max)
     risk_pct_max: float | None = None                           # D4 pattern-sizing: maximum risk % (interpolated by pattern score)
+    risk_pct_group: str | None = None                           # PatternGroup name whose sum (capped at 1.0) drives sizing interpolation
     sl_atr_mult: float | None = None                            # ATR-based SL at entry: entry ± atr × sl_atr_mult
     tp_atr_mult: float | None = None                            # ATR-based TP at entry: entry + atr × tp_atr_mult
     trailing_sl: Literal["atr", "supertrend"] | None = None    # trailing stop type
@@ -146,6 +176,10 @@ class StrategyDefinition(BaseModel):
     signal_gates: list[SignalGate] = []
     # Phase D — pattern groups: aggregate multiple pattern scores into one composite condition
     pattern_groups: list[PatternGroup] = []
+    # Phase D — suppression gates: block entries for N bars when a pattern fires
+    suppression_gates: list[SuppressionGate] = []
+    # Phase D — trigger holds: keep crosses_above/crosses_below active for N bars
+    trigger_holds: list[TriggerHold] = []
 
 
 @dataclass

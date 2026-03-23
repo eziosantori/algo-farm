@@ -9,7 +9,10 @@ import pandas as pd
 from backtesting import Strategy  # type: ignore[import-untyped]
 
 from src.backtest.indicators import IndicatorRegistry
-from src.models import PatternGroup, PositionManagement, RuleDef, SignalGate, StrategyDefinition, TradingHours
+from src.models import (
+    PatternGroup, PositionManagement, RuleDef, SignalGate,
+    StrategyDefinition, SuppressionGate, TradingHours, TriggerHold,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,10 @@ class StrategyComposer:
             "bars_in_trade": 0,
             # Signal-gate countdown: {indicator_name: bars_remaining}
             "gate_countdown": {g.indicator: 0 for g in definition.signal_gates},
+            # Suppression-gate countdown: {indicator_name: bars_remaining}
+            "suppression_countdown": {g.indicator: 0 for g in definition.suppression_gates},
+            # Trigger-hold countdown: {indicator_name: bars_remaining}
+            "trigger_hold_countdown": {h.indicator: 0 for h in definition.trigger_holds},
             # Last observed pattern score for position-sizing interpolation
             "pattern_score": 0.0,
         }
@@ -118,6 +125,33 @@ class StrategyComposer:
                         state["gate_countdown"][gate.indicator] -= 1
                     # (if countdown == 0 and raw == 0, signal naturally expires)
 
+            # --- Suppression gates: block entries when an indecision/reversal pattern fires ---
+            if definition.suppression_gates:
+                for sgate in definition.suppression_gates:
+                    # Decrement first, then check if pattern fired this bar
+                    if state["suppression_countdown"].get(sgate.indicator, 0) > 0:
+                        state["suppression_countdown"][sgate.indicator] -= 1
+                    ind = getattr(self_bt, sgate.indicator, None)
+                    if ind is None:
+                        continue
+                    raw = float(ind[-1])
+                    if not np.isnan(raw) and raw > sgate.threshold:
+                        state["suppression_countdown"][sgate.indicator] = sgate.suppress_for_bars
+
+            suppression_active = any(
+                state["suppression_countdown"].get(sg.indicator, 0) > 0
+                for sg in definition.suppression_gates
+            )
+
+            # --- Trigger holds: keep crosses_above/crosses_below active for N bars ---
+            if definition.trigger_holds:
+                for hold in definition.trigger_holds:
+                    # Decrement first, then check if cross fired this bar
+                    if state["trigger_hold_countdown"].get(hold.indicator, 0) > 0:
+                        state["trigger_hold_countdown"][hold.indicator] -= 1
+                    if _check_hold_trigger_fired(self_bt, hold.indicator, definition.entry_rules):
+                        state["trigger_hold_countdown"][hold.indicator] = hold.hold_for_bars
+
             # --- Pattern groups: sum gate-adjusted scores for each group ---
             group_values: dict[str, float] = {}
             for grp in definition.pattern_groups:
@@ -136,16 +170,21 @@ class StrategyComposer:
                     total += val
                 group_values[grp.name] = total
 
-            # --- Pattern-score sizing: capture highest pattern score for entry sizing ---
+            # --- Pattern-score sizing: capture pattern score for entry sizing ---
             state["pattern_score"] = 0.0
             if pm.risk_pct_min is not None and pm.risk_pct_max is not None:
-                for ind_def in definition.indicators:
-                    ind = getattr(self_bt, ind_def.name, None)
-                    if ind is None:
-                        continue
-                    val = float(ind[-1])
-                    if not np.isnan(val) and 0.0 < val <= 1.0:
-                        state["pattern_score"] = max(state["pattern_score"], val)
+                if pm.risk_pct_group is not None:
+                    # Use named PatternGroup sum as sizing source (capped at 1.0)
+                    state["pattern_score"] = min(group_values.get(pm.risk_pct_group, 0.0), 1.0)
+                else:
+                    # Fallback: max of individual indicator scores in (0, 1]
+                    for ind_def in definition.indicators:
+                        ind = getattr(self_bt, ind_def.name, None)
+                        if ind is None:
+                            continue
+                        val = float(ind[-1])
+                        if not np.isnan(val) and 0.0 < val <= 1.0:
+                            state["pattern_score"] = max(state["pattern_score"], val)
 
             # --- Session gate: respect trading_hours before any other logic ---
             if pm.trading_hours is not None:
@@ -169,7 +208,14 @@ class StrategyComposer:
                     state["initial_sl_dist"] = None
 
                 # --- Long entry ---
-                if _evaluate_rules(self_bt, definition.entry_rules, state["gate_countdown"], group_values):
+                if (
+                    not suppression_active
+                    and _evaluate_rules(
+                        self_bt, definition.entry_rules,
+                        state["gate_countdown"], group_values,
+                        state["trigger_hold_countdown"],
+                    )
+                ):
                     price = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
 
                     sl: float | None = None
@@ -203,7 +249,15 @@ class StrategyComposer:
                     self_bt.buy(size=trade_size, sl=sl, tp=tp)  # type: ignore[attr-defined]
 
                 # --- Short entry (only when no long fired this bar) ---
-                elif definition.entry_rules_short and _evaluate_rules(self_bt, definition.entry_rules_short, state["gate_countdown"], group_values):
+                elif (
+                    not suppression_active
+                    and definition.entry_rules_short
+                    and _evaluate_rules(
+                        self_bt, definition.entry_rules_short,
+                        state["gate_countdown"], group_values,
+                        state["trigger_hold_countdown"],
+                    )
+                ):
                     price = float(self_bt.data.Close[-1])  # type: ignore[attr-defined]
 
                     sl_short: float | None = None
@@ -370,23 +424,69 @@ def _find_indicator_by_type(
     return None
 
 
+def _check_hold_trigger_fired(
+    strategy: Strategy,  # type: ignore[type-arg]
+    indicator: str,
+    entry_rules: list[RuleDef],
+) -> bool:
+    """Return True if a crosses_above/crosses_below rule for *indicator* fired this bar.
+
+    Used by the TriggerHold mechanism to reset the hold countdown when the cross is
+    detected, regardless of whether other entry conditions are met.
+    """
+    ind = getattr(strategy, indicator, None)
+    if ind is None or len(ind) < 2:
+        return False
+    for rule in entry_rules:
+        if rule.indicator != indicator:
+            continue
+        if rule.condition == "crosses_above":
+            if rule.compare_to is not None:
+                other = getattr(strategy, rule.compare_to, None)
+                if other is None or len(other) < 2:
+                    continue
+                if float(ind[-1]) > float(other[-1]) and float(ind[-2]) <= float(other[-2]):
+                    return True
+            elif rule.value is not None:
+                if float(ind[-1]) > rule.value and float(ind[-2]) <= rule.value:
+                    return True
+        elif rule.condition == "crosses_below":
+            if rule.compare_to is not None:
+                other = getattr(strategy, rule.compare_to, None)
+                if other is None or len(other) < 2:
+                    continue
+                if float(ind[-1]) < float(other[-1]) and float(ind[-2]) >= float(other[-2]):
+                    return True
+            elif rule.value is not None:
+                if float(ind[-1]) < rule.value and float(ind[-2]) >= rule.value:
+                    return True
+    return False
+
+
 def _evaluate_rules(
     strategy: Strategy,  # type: ignore[type-arg]
     rules: list[RuleDef],
     gate_countdown: dict[str, int] | None = None,
     group_values: dict[str, float] | None = None,
+    trigger_hold_countdown: dict[str, int] | None = None,
 ) -> bool:
     """Evaluate all rules (AND logic). Returns True if all pass.
 
-    When *gate_countdown* is provided, any indicator whose countdown > 0 is
-    treated as still active (score preserved from the bar it fired).
-
-    When *group_values* is provided, rules that reference a pattern group name
-    (not a real indicator attribute) are resolved from the pre-computed sums.
+    gate_countdown:        pattern signals stay active for N bars after firing.
+    group_values:          pre-computed PatternGroup sums (resolved when indicator not found).
+    trigger_hold_countdown: crosses_above/crosses_below conditions stay active for N bars.
     """
     if not rules:
         return False
     for rule in rules:
+        # --- Trigger hold: if a cross condition has an active hold, treat it as True ---
+        if (
+            trigger_hold_countdown
+            and trigger_hold_countdown.get(rule.indicator, 0) > 0
+            and rule.condition in ("crosses_above", "crosses_below")
+        ):
+            continue  # condition passes — hold still active
+
         ind = getattr(strategy, rule.indicator, None)
         if ind is None:
             # Not a real indicator — check pattern groups
@@ -397,8 +497,7 @@ def _evaluate_rules(
                 return False
         else:
             current = float(ind[-1])
-            # If the indicator is under a signal gate and the countdown > 0, treat
-            # the signal as still active (patterns return 0.0 on non-firing bars, not NaN).
+            # Signal gate: if indicator countdown > 0, treat 0.0/NaN as still active
             if gate_countdown and gate_countdown.get(rule.indicator, 0) > 0:
                 if np.isnan(current) or current == 0.0:
                     current = 1.0
