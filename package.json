@@ -6,12 +6,12 @@
     "dev:ui": "pnpm --filter ui dev",
     "test:api": "pnpm --filter api test",
     "test": "pnpm --filter api test",
-    "workflow": "claude --agent workflow-orchestrator"
+    "workflow": "claude --dangerously-skip-permissions --agent workflow-orchestrator"
   },
   "packageManager": "pnpm@10.6.5",
   "engines": {
     "pnpm": ">=9",
-    "node": ">=20"
+    "node": "^22"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["better-sqlite3", "esbuild"],
