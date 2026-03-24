@@ -7,6 +7,8 @@ export const IndicatorTypeSchema = z.enum([
   "rsi",
   "stoch",
   "atr",
+  "atr_robust",
+  "atr_gaussian",
   "bollinger_bands",
   "bollinger_upper",
   "bollinger_lower",

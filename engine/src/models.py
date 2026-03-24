@@ -16,6 +16,8 @@ class IndicatorDef(BaseModel):
         "rsi",
         "stoch",
         "atr",
+        "atr_robust",
+        "atr_gaussian",
         "bollinger_bands",
         "bollinger_upper",
         "bollinger_lower",
