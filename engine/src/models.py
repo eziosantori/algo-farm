@@ -59,6 +59,12 @@ class IndicatorDef(BaseModel):
         "harami",
         # Phase D — HTF pattern wrapper
         "htf_pattern",
+        # OHLCV primitives
+        "close",
+        "open",
+        "high",
+        "low",
+        "volume",
     ]
     params: dict[str, Any]
 
@@ -124,6 +130,8 @@ class RuleDef(BaseModel):
     condition: str
     value: float | None = None
     compare_to: str | None = None
+    compare_to_multiplier: float | None = None
+    compare_to_offset: float | None = None
 
 
 class TradingHours(BaseModel):

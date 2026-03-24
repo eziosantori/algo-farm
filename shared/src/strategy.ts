@@ -49,6 +49,12 @@ export const IndicatorTypeSchema = z.enum([
   "spinning_top",
   "harami",
   "htf_pattern",
+  // OHLCV primitives
+  "close",
+  "open",
+  "high",
+  "low",
+  "volume",
 ]);
 
 export type IndicatorType = z.infer<typeof IndicatorTypeSchema>;
@@ -77,6 +83,8 @@ export const RuleDefSchema = z.object({
   condition: RuleConditionSchema,
   value: z.number().nullable().optional(),
   compare_to: z.string().nullable().optional(),
+  compare_to_multiplier: z.number().nullable().optional(),
+  compare_to_offset: z.number().nullable().optional(),
 });
 
 export type RuleDef = z.infer<typeof RuleDefSchema>;

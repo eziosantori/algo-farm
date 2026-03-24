@@ -520,6 +520,10 @@ def _check_condition(strategy: Strategy, rule: RuleDef, current: float) -> bool:
         target = float(other_ind[-1])
         if np.isnan(target):
             return False
+        if rule.compare_to_multiplier is not None:
+            target *= rule.compare_to_multiplier
+        if rule.compare_to_offset is not None:
+            target += rule.compare_to_offset
     else:
         target = None
 

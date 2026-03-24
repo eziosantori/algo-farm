@@ -29,6 +29,6 @@ class IndicatorRegistry:
 
 
 # Import modules to trigger registration
-from src.backtest.indicators import trend, momentum, volatility, session, patterns  # noqa: E402, F401
+from src.backtest.indicators import trend, momentum, volatility, session, patterns, ohlcv as ohlcv  # noqa: E402, F401
 
 __all__ = ["IndicatorRegistry"]
