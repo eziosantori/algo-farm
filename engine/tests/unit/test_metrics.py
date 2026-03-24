@@ -85,6 +85,29 @@ def test_calmar_ratio() -> None:
         assert abs(m.calmar_ratio - expected_calmar) < 0.001
 
 
+def test_max_balance_dd_from_trades() -> None:
+    """Balance DD is computed from closed-trade P&L, not equity curve."""
+    trades = [
+        {"pnl": 500.0, "duration_bars": 5},   # balance: 10500
+        {"pnl": -1000.0, "duration_bars": 3},  # balance: 9500  → dd = -9.52%
+        {"pnl": -500.0, "duration_bars": 2},   # balance: 9000  → dd = -14.29%
+        {"pnl": 2000.0, "duration_bars": 4},   # balance: 11000 (new peak)
+    ]
+    equity = np.linspace(10000, 11000, 100)
+    m = calculate_metrics(equity, trades)
+    # Peak = 10500, trough = 9000 → dd = (9000-10500)/10500 = -14.29%
+    assert abs(m.max_balance_dd_pct - (-14.2857)) < 0.1
+    # Equity DD should be 0 (monotonic equity curve)
+    assert m.max_drawdown_pct >= -0.01
+
+
+def test_max_balance_dd_no_trades() -> None:
+    """No trades → balance DD should be 0."""
+    equity = np.array([10000.0, 9000.0, 8000.0])
+    m = calculate_metrics(equity, [])
+    assert m.max_balance_dd_pct == 0.0
+
+
 def test_short_equity_returns_zero_metrics() -> None:
     m = calculate_metrics(np.array([10000.0]), [])
     assert m.total_return_pct == 0.0

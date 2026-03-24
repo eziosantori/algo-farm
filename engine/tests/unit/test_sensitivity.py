@@ -39,7 +39,7 @@ def _simple_strategy() -> dict:
         ],
         "entry_rules": [{"indicator": "rsi14", "condition": ">", "value": 50}],
         "exit_rules":  [{"indicator": "rsi14", "condition": "<", "value": 50}],
-        "position_management": {"size": 0.02, "max_open_trades": 1},
+        "position_management": {"size": 0.01, "max_open_trades": 1},
     }
 
 

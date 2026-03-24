@@ -37,6 +37,7 @@ def _mock_result(sharpe: float = 1.0, total_return: float = 0.05, trades: int = 
         total_return_pct=total_return * 100,
         cagr_pct=total_return * 50,
         max_drawdown_pct=10.0,
+        max_balance_dd_pct=8.0,
         total_trades=trades,
         win_rate_pct=50.0,
         profit_factor=1.2,

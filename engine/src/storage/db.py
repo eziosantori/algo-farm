@@ -44,6 +44,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             sortino_ratio REAL,
             calmar_ratio REAL,
             max_drawdown_pct REAL,
+            max_balance_dd_pct REAL,
             win_rate_pct REAL,
             profit_factor REAL,
             total_trades INTEGER,
@@ -132,13 +133,13 @@ class RunRepo:
                 id, job_id, instrument, timeframe,
                 params_json, equity_curve_json, trades_json,
                 total_return_pct, sharpe_ratio, sortino_ratio, calmar_ratio,
-                max_drawdown_pct, win_rate_pct, profit_factor, total_trades,
+                max_drawdown_pct, max_balance_dd_pct, win_rate_pct, profit_factor, total_trades,
                 avg_trade_duration_bars, cagr_pct, expectancy, completed_at
             ) VALUES (
                 ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?,
-                ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
                 ?, ?, ?, ?
             )
             """,
@@ -152,6 +153,7 @@ class RunRepo:
                 metrics_dict.get("sortino_ratio"),
                 metrics_dict.get("calmar_ratio"),
                 metrics_dict.get("max_drawdown_pct"),
+                metrics_dict.get("max_balance_dd_pct"),
                 metrics_dict.get("win_rate_pct"),
                 metrics_dict.get("profit_factor"),
                 metrics_dict.get("total_trades"),

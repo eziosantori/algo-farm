@@ -49,6 +49,9 @@ def calculate_metrics(
     abs_dd = abs(max_drawdown_pct)
     calmar_ratio = (cagr_pct / abs_dd) if abs_dd > 0 else 0.0
 
+    # Balance drawdown (from closed-trade P&L only)
+    max_balance_dd_pct = _balance_drawdown(trades, initial)
+
     # Trade-level metrics
     total_trades = len(trades)
     if total_trades == 0:
@@ -78,6 +81,7 @@ def calculate_metrics(
         sortino_ratio=float(sortino_ratio),
         calmar_ratio=float(calmar_ratio),
         max_drawdown_pct=max_drawdown_pct,
+        max_balance_dd_pct=max_balance_dd_pct,
         win_rate_pct=win_rate_pct,
         profit_factor=profit_factor,
         total_trades=total_trades,
@@ -87,6 +91,27 @@ def calculate_metrics(
     )
 
 
+def _balance_drawdown(trades: list[dict[str, object]], initial_equity: float) -> float:
+    """Max peak-to-trough drawdown of the balance curve (closed trades only).
+
+    Balance starts at *initial_equity* and accumulates realised P&L after each
+    trade close.  The returned value is a negative percentage (like max_drawdown_pct).
+    """
+    if not trades:
+        return 0.0
+    balance = initial_equity
+    peak = balance
+    max_dd = 0.0
+    for t in trades:
+        balance += float(t.get("pnl", 0.0))
+        if balance > peak:
+            peak = balance
+        dd = (balance - peak) / peak if peak != 0 else 0.0
+        if dd < max_dd:
+            max_dd = dd
+    return max_dd * 100.0
+
+
 def _zero_metrics() -> BacktestMetrics:
     return BacktestMetrics(
         total_return_pct=0.0,
@@ -94,6 +119,7 @@ def _zero_metrics() -> BacktestMetrics:
         sortino_ratio=0.0,
         calmar_ratio=0.0,
         max_drawdown_pct=0.0,
+        max_balance_dd_pct=0.0,
         win_rate_pct=0.0,
         profit_factor=0.0,
         total_trades=0,

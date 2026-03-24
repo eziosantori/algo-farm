@@ -161,7 +161,7 @@ Everything written to **stdout** is newline-delimited JSON. Three message types:
     { "indicator": "fast_sma", "condition": "crosses_below", "compare_to": "slow_sma" }
   ],
   "position_management": {
-    "size": 0.02,
+    "size": 0.01,
     "sl_pips": null,
     "tp_pips": null,
     "max_open_trades": 1

@@ -143,7 +143,7 @@ class ScaleOut(BaseModel):
 
 
 class PositionManagement(BaseModel):
-    size: float = 0.02
+    size: float = 0.01
     sl_pips: float | None = None
     tp_pips: float | None = None
     max_open_trades: int = 1
@@ -189,6 +189,7 @@ class BacktestMetrics:
     sortino_ratio: float
     calmar_ratio: float
     max_drawdown_pct: float
+    max_balance_dd_pct: float
     win_rate_pct: float
     profit_factor: float
     total_trades: int
