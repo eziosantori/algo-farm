@@ -160,6 +160,29 @@ export interface StrategyLabSummary {
 }
 
 // ---------------------------------------------------------------------------
+// Deployment types
+// ---------------------------------------------------------------------------
+
+export interface DeploymentPairRow {
+  instrument: string;
+  timeframe: string;
+  /** Global params + per-pair overrides merged — the params to apply on platform */
+  effective_params: Record<string, unknown>;
+  /** Keys whose value differs from global default */
+  overridden_keys: string[];
+  is_sharpe: number | null;
+  oos_sharpe: number | null;
+  oos_is_ratio: number | null;
+  passed_robustness: boolean;
+}
+
+export interface DeploymentSummary {
+  strategy_id: string;
+  global_params: Record<string, unknown>;
+  pairs: DeploymentPairRow[];
+}
+
+// ---------------------------------------------------------------------------
 // Export helpers
 // ---------------------------------------------------------------------------
 
@@ -283,5 +306,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(options ?? {}),
     });
+  },
+
+  getDeploymentSummary(id: string): Promise<DeploymentSummary> {
+    return request(`/strategies/${id}/deployment`);
   },
 };

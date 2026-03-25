@@ -304,3 +304,135 @@ describe("LabRepository — getStrategyLabSummary", () => {
     expect(summary.best_params).toEqual({ period: 21 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// getDeploymentData
+// ---------------------------------------------------------------------------
+
+describe("LabRepository — getDeploymentData", () => {
+  let db: Database.Database;
+  let repo: LabRepository;
+  const strategyId = "strat-deploy-01";
+
+  const definition = {
+    indicators: [
+      { params: { period: 14 } },
+      { params: { multiplier: 3.5 } },
+    ],
+    param_overrides: {
+      XAUUSD: { H4: { period: 21, multiplier: 4.0 } },
+      GER40: { H1: { period: 10 } },
+    },
+  };
+
+  beforeEach(() => {
+    db = createInMemoryDb();
+    repo = new LabRepository(db);
+    db.prepare(
+      `INSERT INTO strategies (id, name, variant, definition_json, created_at, updated_at, lifecycle_status)
+       VALUES (?, 'Test', 'basic', '{}', datetime('now'), datetime('now'), 'validated')`
+    ).run(strategyId);
+  });
+  afterEach(() => db.close());
+
+  it("returns global_params as flat merge of all indicator params", () => {
+    const result = repo.getDeploymentData(strategyId, definition);
+    expect(result.global_params).toEqual({ period: 14, multiplier: 3.5 });
+  });
+
+  it("computes effective_params as global + override for each pair", () => {
+    const result = repo.getDeploymentData(strategyId, definition);
+    const xau = result.pairs.find((p) => p.instrument === "XAUUSD" && p.timeframe === "H4")!;
+    expect(xau.effective_params).toEqual({ period: 21, multiplier: 4.0 });
+    expect(xau.overridden_keys).toContain("period");
+    expect(xau.overridden_keys).toContain("multiplier");
+  });
+
+  it("effective_params for a pair with partial override inherits global for unchanged keys", () => {
+    const result = repo.getDeploymentData(strategyId, definition);
+    const ger = result.pairs.find((p) => p.instrument === "GER40" && p.timeframe === "H1")!;
+    expect(ger.effective_params.period).toBe(10);
+    expect(ger.effective_params.multiplier).toBe(3.5); // inherited from global
+    expect(ger.overridden_keys).toEqual(["period"]);
+  });
+
+  it("includes IS and OOS sharpe from Lab results", () => {
+    const { id: sessionId } = repo.createSession({
+      ...sampleSession, strategy_id: strategyId,
+    });
+    repo.addResult({
+      session_id: sessionId, instrument: "XAUUSD", timeframe: "H4",
+      params_json: JSON.stringify({ period: 21, multiplier: 4.0 }),
+      metrics_json: JSON.stringify({ ...sampleMetrics, sharpe_ratio: 0.65 }),
+      split: "is",
+    });
+    repo.addResult({
+      session_id: sessionId, instrument: "XAUUSD", timeframe: "H4",
+      params_json: JSON.stringify({ period: 21, multiplier: 4.0 }),
+      metrics_json: JSON.stringify({ ...sampleMetrics, sharpe_ratio: 0.49 }),
+      split: "oos",
+    });
+
+    const result = repo.getDeploymentData(strategyId, definition);
+    const xau = result.pairs.find((p) => p.instrument === "XAUUSD" && p.timeframe === "H4")!;
+    expect(xau.is_sharpe).toBeCloseTo(0.65);
+    expect(xau.oos_sharpe).toBeCloseTo(0.49);
+    expect(xau.oos_is_ratio).toBeCloseTo(0.49 / 0.65);
+  });
+
+  it("passed_robustness is true when a result has validated status", () => {
+    const { id: sessionId } = repo.createSession({
+      ...sampleSession, strategy_id: strategyId,
+    });
+    const { id: resultId } = repo.addResult({
+      session_id: sessionId, instrument: "XAUUSD", timeframe: "H4",
+      params_json: "{}", metrics_json: JSON.stringify(sampleMetrics), split: "is",
+    });
+    repo.updateResultStatus(resultId, "validated");
+
+    const result = repo.getDeploymentData(strategyId, definition);
+    const xau = result.pairs.find((p) => p.instrument === "XAUUSD" && p.timeframe === "H4")!;
+    expect(xau.passed_robustness).toBe(true);
+  });
+
+  it("passed_robustness is false when result status is pending", () => {
+    const { id: sessionId } = repo.createSession({
+      ...sampleSession, strategy_id: strategyId,
+    });
+    repo.addResult({
+      session_id: sessionId, instrument: "GER40", timeframe: "H1",
+      params_json: "{}", metrics_json: JSON.stringify(sampleMetrics), split: "is",
+    });
+    const result = repo.getDeploymentData(strategyId, definition);
+    const ger = result.pairs.find((p) => p.instrument === "GER40" && p.timeframe === "H1")!;
+    expect(ger.passed_robustness).toBe(false);
+  });
+
+  it("passed pairs are sorted before failed pairs", () => {
+    const { id: sessionId } = repo.createSession({
+      ...sampleSession, strategy_id: strategyId,
+    });
+    repo.addResult({
+      session_id: sessionId, instrument: "GER40", timeframe: "H1",
+      params_json: "{}", metrics_json: JSON.stringify(sampleMetrics), split: "is",
+    });
+    const { id: xauResultId } = repo.addResult({
+      session_id: sessionId, instrument: "XAUUSD", timeframe: "H4",
+      params_json: "{}", metrics_json: JSON.stringify(sampleMetrics), split: "is",
+    });
+    repo.updateResultStatus(xauResultId, "validated");
+
+    const result = repo.getDeploymentData(strategyId, definition);
+    expect(result.pairs[0].instrument).toBe("XAUUSD");
+    expect(result.pairs[0].passed_robustness).toBe(true);
+  });
+
+  it("returns empty pairs list when no overrides and no Lab results", () => {
+    const result = repo.getDeploymentData(strategyId, {
+      indicators: [{ params: { period: 14 } }],
+      param_overrides: {},
+    });
+    expect(result.pairs).toHaveLength(0);
+    expect(result.global_params).toEqual({ period: 14 });
+  });
+});

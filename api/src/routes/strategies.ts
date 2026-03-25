@@ -102,6 +102,24 @@ router.get("/strategies/:id/lab-summary", (req: Request, res: Response): void =>
   res.json(summary);
 });
 
+router.get("/strategies/:id/deployment", (req: Request, res: Response): void => {
+  const repo = getRepo();
+  const record = repo.get(paramId(req));
+  if (!record) {
+    res.status(404).json({ error: "NOT_FOUND", message: "Strategy not found" });
+    return;
+  }
+  const labRepo = new LabRepository(getDb());
+  const summary = labRepo.getDeploymentData(
+    paramId(req),
+    record.definition as {
+      indicators: Array<{ params: Record<string, unknown> }>;
+      param_overrides?: Record<string, Record<string, Record<string, unknown>>>;
+    },
+  );
+  res.json(summary);
+});
+
 router.delete("/strategies/:id", (req: Request, res: Response): void => {
   const repo = getRepo();
   const deleted = repo.delete(paramId(req));

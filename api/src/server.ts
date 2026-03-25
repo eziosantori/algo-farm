@@ -3,7 +3,7 @@ import { fileURLToPath } from "url";
 import { createServer } from "http";
 import express from "express";
 import cors from "cors";
-import { initDb } from "./db/client.js";
+import { initDb, runCleanup } from "./db/client.js";
 import healthRouter from "./routes/health.js";
 import strategiesRouter from "./routes/strategies.js";
 import wizardRouter from "./routes/wizard.js";
@@ -33,7 +33,12 @@ export function createApp(): express.Application {
 // Only start the server when this module is the entry point
 const currentFile = fileURLToPath(import.meta.url);
 if (process.argv[1] === currentFile) {
-  initDb(DB_PATH);
+  const db = initDb(DB_PATH);
+  const retainDays = parseInt(process.env.CLEANUP_RETAIN_DAYS ?? "90", 10);
+  const cleaned = runCleanup(db, retainDays);
+  if (cleaned > 0) {
+    console.log(`Startup cleanup: removed ${cleaned} stale lab session(s) (retain=${retainDays}d)`);
+  }
   const app = createApp();
   const httpServer = createServer(app);
 

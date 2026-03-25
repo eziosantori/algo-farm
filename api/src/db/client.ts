@@ -38,6 +38,43 @@ export function initDb(dbPath: string): Database.Database {
   return _db;
 }
 
+/**
+ * Delete stale lab sessions to prevent unbounded DB growth.
+ *
+ * Retention rules (both applied at startup):
+ *  - failed sessions older than 14 days → always deleted
+ *  - any session older than retainDays that is NOT linked to a
+ *    validated / production strategy → deleted
+ *
+ * Sessions belonging to validated/production strategies are kept forever.
+ * backtest_results rows are removed via CASCADE.
+ *
+ * @param retainDays - controlled by CLEANUP_RETAIN_DAYS env var (default 90)
+ */
+export function runCleanup(db: Database.Database, retainDays: number = 90): number {
+  const result = db.prepare(`
+    DELETE FROM lab_sessions
+    WHERE
+      (status = 'failed' AND created_at < datetime('now', '-14 days'))
+      OR (
+        created_at < datetime('now', '-' || ? || ' days')
+        AND (
+          strategy_id IS NULL
+          OR strategy_id NOT IN (
+            SELECT id FROM strategies
+            WHERE lifecycle_status IN (
+              'validated',
+              'production_standard',
+              'production_aggressive',
+              'production_defensive'
+            )
+          )
+        )
+      )
+  `).run(retainDays);
+  return result.changes;
+}
+
 export function closeDb(): void {
   if (_db) {
     _db.close();

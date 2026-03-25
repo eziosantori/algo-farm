@@ -117,6 +117,27 @@ export interface StrategyLabSummary {
   }>;
 }
 
+export interface DeploymentPairRow {
+  instrument: string;
+  timeframe: string;
+  /** Global indicator params merged with per-pair overrides — the params to apply on platform */
+  effective_params: Record<string, unknown>;
+  /** Keys whose value differs from the global default */
+  overridden_keys: string[];
+  is_sharpe: number | null;
+  oos_sharpe: number | null;
+  /** oos_sharpe / is_sharpe ratio (null when either is unavailable or is_sharpe ≤ 0) */
+  oos_is_ratio: number | null;
+  passed_robustness: boolean;
+}
+
+export interface DeploymentSummary {
+  strategy_id: string;
+  /** Flat merge of all indicator default params — the baseline applied to pairs without overrides */
+  global_params: Record<string, unknown>;
+  pairs: DeploymentPairRow[];
+}
+
 export interface BacktestResultDetail {
   id: string;
   session_id: string;
@@ -332,6 +353,102 @@ export class LabRepository {
       .prepare(`UPDATE lab_sessions SET research_notes = ?, updated_at = ? WHERE id = ?`)
       .run(notes, now, id);
     return result.changes > 0;
+  }
+
+  getDeploymentData(
+    strategyId: string,
+    definition: {
+      indicators: Array<{ params: Record<string, unknown> }>;
+      param_overrides?: Record<string, Record<string, Record<string, unknown>>>;
+    },
+  ): DeploymentSummary {
+    // 1. Global params: flat merge of all indicator default params
+    const global_params: Record<string, unknown> = {};
+    for (const ind of definition.indicators) {
+      Object.assign(global_params, ind.params);
+    }
+    const param_overrides = definition.param_overrides ?? {};
+
+    // 2. Query most-recent IS + OOS results per (instrument, timeframe) for this strategy
+    const PASSED = new Set(["validated", "production_standard", "production_aggressive", "production_defensive"]);
+    const rows = this.db
+      .prepare(
+        `SELECT r.instrument, r.timeframe, r.split, r.metrics_json, r.status
+         FROM backtest_results r
+         JOIN lab_sessions ls ON r.session_id = ls.id
+         WHERE ls.strategy_id = ? AND r.split IN ('is', 'oos')
+         ORDER BY r.instrument, r.timeframe, r.split, r.created_at DESC`,
+      )
+      .all(strategyId) as Array<{
+        instrument: string; timeframe: string;
+        split: string; metrics_json: string; status: string;
+      }>;
+
+    // 3. Build per-pair metrics index (first row per split = most recent)
+    type PairData = { is_sharpe: number | null; oos_sharpe: number | null; passed: boolean };
+    const pairIndex = new Map<string, PairData>();
+    for (const row of rows) {
+      const key = `${row.instrument}|${row.timeframe}`;
+      if (!pairIndex.has(key)) {
+        pairIndex.set(key, { is_sharpe: null, oos_sharpe: null, passed: false });
+      }
+      const entry = pairIndex.get(key)!;
+      const m = JSON.parse(row.metrics_json) as { sharpe_ratio?: number };
+      if (row.split === "is" && entry.is_sharpe === null) {
+        entry.is_sharpe = m.sharpe_ratio ?? null;
+      }
+      if (row.split === "oos" && entry.oos_sharpe === null) {
+        entry.oos_sharpe = m.sharpe_ratio ?? null;
+      }
+      if (PASSED.has(row.status)) entry.passed = true;
+    }
+
+    // 4. Collect all pairs: union of param_overrides keys + Lab results
+    const allKeys = new Set<string>(pairIndex.keys());
+    for (const instrument of Object.keys(param_overrides)) {
+      for (const timeframe of Object.keys(param_overrides[instrument])) {
+        allKeys.add(`${instrument}|${timeframe}`);
+      }
+    }
+
+    // 5. Build DeploymentPairRow for each pair
+    const pairs: DeploymentPairRow[] = [];
+    for (const key of allKeys) {
+      const [instrument, timeframe] = key.split("|");
+      const override = param_overrides[instrument]?.[timeframe] ?? {};
+      const effective_params = { ...global_params, ...override };
+      const overridden_keys = Object.keys(override).filter(
+        (k) => JSON.stringify(override[k]) !== JSON.stringify(global_params[k]),
+      );
+      const entry = pairIndex.get(key);
+      const is_sharpe = entry?.is_sharpe ?? null;
+      const oos_sharpe = entry?.oos_sharpe ?? null;
+      const oos_is_ratio =
+        is_sharpe !== null && oos_sharpe !== null && is_sharpe > 0
+          ? oos_sharpe / is_sharpe
+          : null;
+      pairs.push({
+        instrument,
+        timeframe,
+        effective_params,
+        overridden_keys,
+        is_sharpe,
+        oos_sharpe,
+        oos_is_ratio,
+        passed_robustness: entry?.passed ?? false,
+      });
+    }
+
+    // Sort: passed first → OOS/IS ratio desc → alphabetical
+    pairs.sort((a, b) => {
+      if (a.passed_robustness !== b.passed_robustness) return a.passed_robustness ? -1 : 1;
+      const ra = a.oos_is_ratio ?? -Infinity;
+      const rb = b.oos_is_ratio ?? -Infinity;
+      if (rb !== ra) return rb - ra;
+      return `${a.instrument}${a.timeframe}`.localeCompare(`${b.instrument}${b.timeframe}`);
+    });
+
+    return { strategy_id: strategyId, global_params, pairs };
   }
 
   getStrategyLabSummary(strategyId: string): StrategyLabSummary | null {

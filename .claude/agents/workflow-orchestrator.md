@@ -251,7 +251,21 @@ python run.py \
   2>/dev/null
 ```
 
-For each pair: parse `"type":"completed"` → extract `best_params`.
+For each pair: parse `"type":"completed"` → extract `best_params` and `best_metrics`.
+
+After each pair's run, POST the result to the PHASE 1 Lab session so the UI shows
+per-pair params alongside baseline metrics:
+```bash
+curl -s -X POST http://localhost:3001/lab/sessions/<session_id>/results \
+  -H "Content-Type: application/json" \
+  -d '{
+    "instrument": "<instrument>",
+    "timeframe": "<timeframe>",
+    "split": "is",
+    "params_json": "<escaped-best_params-json>",
+    "metrics_json": "<escaped-best_metrics-json>"
+  }'
+```
 
 After all pairs have been processed:
 1. Read `engine/strategies/optimizing/<name>.json`
@@ -276,6 +290,13 @@ If a pair produces 0 trades, skip it (no override entry for that pair).
 IS baseline + OOS + Walk-Forward + Monte Carlo for each (instrument × timeframe).
 
 Create robustness Lab session (same POST as PHASE 1 but name = "<name> [robustness]").
+
+**Per-pair effective params**: before running each pair, compute:
+```
+effective_params = { ...global_best_params, ...(param_overrides[instrument]?.[timeframe] ?? {}) }
+```
+Use `effective_params` as `params_json` in ALL Lab result POSTs for this phase.
+This ensures the UI shows the actual parameters used per pair, not just the global ones.
 
 **IS baseline** (same as PHASE 1, already collected — reuse if fresh, else re-run).
 
