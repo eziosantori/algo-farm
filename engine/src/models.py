@@ -158,6 +158,12 @@ class ScaleOut(BaseModel):
     volume_pct: int = 50      # percentage of position to close (1–99)
 
 
+class EntryAnchoredVwapExit(BaseModel):
+    """Dynamic exit using VWAP anchored at the first bar where the trade is active."""
+
+    price_source: Literal["hlc3", "close"] = "hlc3"
+
+
 class PositionManagement(BaseModel):
     size: float = 0.01
     sl_pips: float | None = None
@@ -175,6 +181,7 @@ class PositionManagement(BaseModel):
     scale_out: ScaleOut | None = None                          # partial-close config
     time_exit_bars: int | None = None                          # close losing trade after N bars
     trading_hours: TradingHours | None = None                  # session gate (UTC)
+    entry_anchored_vwap_exit: EntryAnchoredVwapExit | None = None  # dynamic exit from trade-open anchored VWAP
 
 
 class StrategyDefinition(BaseModel):

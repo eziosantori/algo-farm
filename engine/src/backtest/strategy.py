@@ -10,7 +10,7 @@ from backtesting import Strategy  # type: ignore[import-untyped]
 
 from src.backtest.indicators import IndicatorRegistry
 from src.models import (
-    PatternGroup, PositionManagement, RuleDef, SignalGate,
+    EntryAnchoredVwapExit, PatternGroup, PositionManagement, RuleDef, SignalGate,
     StrategyDefinition, SuppressionGate, TradingHours, TriggerHold,
 )
 
@@ -50,6 +50,11 @@ class StrategyComposer:
             "trigger_hold_countdown": {h.indicator: 0 for h in definition.trigger_holds},
             # Last observed pattern score for position-sizing interpolation
             "pattern_score": 0.0,
+            # Entry-anchored VWAP state (runtime only, active while a trade is open)
+            "entry_avwap_weight_sum": 0.0,
+            "entry_avwap_weighted_price_sum": 0.0,
+            "entry_avwap_prev_value": np.nan,
+            "entry_avwap_value": np.nan,
         }
 
         def init(self_bt: Strategy) -> None:  # type: ignore[type-arg]
@@ -225,6 +230,7 @@ class StrategyComposer:
                         state["scaled_out"] = False
                         state["bars_in_trade"] = 0
                         state["initial_sl_dist"] = None
+                        _reset_entry_anchored_vwap_state(state)
                     return
 
             if not self_bt.position:  # type: ignore[attr-defined]
@@ -235,6 +241,7 @@ class StrategyComposer:
                     state["scaled_out"] = False
                     state["bars_in_trade"] = 0
                     state["initial_sl_dist"] = None
+                    _reset_entry_anchored_vwap_state(state)
 
                 # --- Long entry ---
                 if (
@@ -273,6 +280,7 @@ class StrategyComposer:
                     state["direction"] = "long"
                     state["scaled_out"] = False
                     state["bars_in_trade"] = 0
+                    _reset_entry_anchored_vwap_state(state)
 
                     trade_size = _compute_trade_size(pm, price, sl, float(self_bt.equity), state["pattern_score"])  # type: ignore[attr-defined]
                     self_bt.buy(size=trade_size, sl=sl, tp=tp)  # type: ignore[attr-defined]
@@ -315,6 +323,7 @@ class StrategyComposer:
                     state["direction"] = "short"
                     state["scaled_out"] = False
                     state["bars_in_trade"] = 0
+                    _reset_entry_anchored_vwap_state(state)
 
                     trade_size = _compute_trade_size(pm, price, sl_short, float(self_bt.equity), state["pattern_score"])  # type: ignore[attr-defined]
                     self_bt.sell(size=trade_size, sl=sl_short, tp=tp_short)  # type: ignore[attr-defined]
@@ -331,6 +340,14 @@ class StrategyComposer:
                     return
                 trade = trades[0]
                 is_short = trade.size < 0
+
+                if pm.entry_anchored_vwap_exit is not None:
+                    state["entry_avwap_prev_value"] = state["entry_avwap_value"]
+                    state["entry_avwap_value"] = _update_entry_anchored_vwap(
+                        self_bt,
+                        state,
+                        pm.entry_anchored_vwap_exit,
+                    )
 
                 # --- Trailing SL: ATR-based ---
                 if pm.trailing_sl == "atr":
@@ -384,6 +401,17 @@ class StrategyComposer:
                         self_bt.position.close()  # type: ignore[attr-defined]
                         return
 
+                # --- Dynamic exit: VWAP anchored at trade-open ---
+                if _entry_anchored_vwap_exit_triggered(
+                    self_bt,
+                    pm.entry_anchored_vwap_exit,
+                    state["entry_avwap_prev_value"],
+                    state["entry_avwap_value"],
+                    is_short,
+                ):
+                    self_bt.position.close()  # type: ignore[attr-defined]
+                    return
+
                 # --- Rule-based exit ---
                 exit_rules = (
                     definition.exit_rules_short
@@ -431,6 +459,71 @@ def _compute_trade_size(
             units = (equity * effective_risk) / sl_distance
             return max(1, round(units))
     return pm.size
+
+
+def _reset_entry_anchored_vwap_state(state: dict[str, Any]) -> None:
+    """Reset runtime VWAP state tied to the active trade."""
+    state["entry_avwap_weight_sum"] = 0.0
+    state["entry_avwap_weighted_price_sum"] = 0.0
+    state["entry_avwap_prev_value"] = np.nan
+    state["entry_avwap_value"] = np.nan
+
+
+def _resolve_runtime_price_source(
+    open_: float,
+    high: float,
+    low: float,
+    close: float,
+    price_source: str,
+) -> float:
+    """Resolve the current-bar price used for runtime AVWAP."""
+    if price_source == "hlc3":
+        return (high + low + close) / 3.0
+    if price_source == "close":
+        return close
+    raise ValueError(f"Unsupported runtime AVWAP price_source '{price_source}'")
+
+
+def _update_entry_anchored_vwap(
+    strategy: Strategy,  # type: ignore[type-arg]
+    state: dict[str, Any],
+    cfg: EntryAnchoredVwapExit,
+) -> float:
+    """Update and return entry-anchored VWAP for the current open trade."""
+    open_ = float(strategy.data.Open[-1])   # type: ignore[attr-defined]
+    high = float(strategy.data.High[-1])    # type: ignore[attr-defined]
+    low = float(strategy.data.Low[-1])      # type: ignore[attr-defined]
+    close = float(strategy.data.Close[-1])  # type: ignore[attr-defined]
+    volume = max(float(strategy.data.Volume[-1]), 0.0)  # type: ignore[attr-defined]
+
+    if volume <= 0.0:
+        return float(state["entry_avwap_value"])
+
+    price = _resolve_runtime_price_source(open_, high, low, close, cfg.price_source)
+    state["entry_avwap_weight_sum"] += volume
+    state["entry_avwap_weighted_price_sum"] += price * volume
+    return state["entry_avwap_weighted_price_sum"] / state["entry_avwap_weight_sum"]
+
+
+def _entry_anchored_vwap_exit_triggered(
+    strategy: Strategy,  # type: ignore[type-arg]
+    cfg: EntryAnchoredVwapExit | None,
+    prev_avwap: float,
+    current_avwap: float,
+    is_short: bool,
+) -> bool:
+    """Return True when price crosses the runtime entry-anchored VWAP exit line."""
+    if cfg is None or np.isnan(prev_avwap) or np.isnan(current_avwap):
+        return False
+    if len(strategy.data.Close) < 2:  # type: ignore[attr-defined]
+        return False
+
+    prev_close = float(strategy.data.Close[-2])  # type: ignore[attr-defined]
+    current_close = float(strategy.data.Close[-1])  # type: ignore[attr-defined]
+
+    if is_short:
+        return current_close > current_avwap and prev_close <= prev_avwap
+    return current_close < current_avwap and prev_close >= prev_avwap
 
 
 def _get_fn_params(fn: Any) -> set[str]:

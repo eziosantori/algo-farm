@@ -1,11 +1,19 @@
 """Integration tests for M9 Advanced Position Management features."""
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from src.backtest.runner import BacktestRunner
-from src.models import IndicatorDef, PositionManagement, RuleDef, ScaleOut, StrategyDefinition
+from src.models import (
+    EntryAnchoredVwapExit,
+    IndicatorDef,
+    PositionManagement,
+    RuleDef,
+    ScaleOut,
+    StrategyDefinition,
+)
 
 
 def _make_strategy(pm: PositionManagement, extra_indicators: list[IndicatorDef] | None = None) -> StrategyDefinition:
@@ -92,6 +100,67 @@ def test_all_m9_features_combined(synthetic_ohlcv: pd.DataFrame) -> None:
     assert isinstance(result.trades, list)
     assert isinstance(result.equity_curve, list)
     assert len(result.equity_curve) > 0
+
+
+def _intraday_ohlcv(close_values: list[float], start: str = "2024-01-03 08:00") -> pd.DataFrame:
+    """Build a deterministic OHLCV frame for runtime AVWAP exit tests."""
+    close = np.array(close_values, dtype=float)
+    open_p = np.roll(close, 1)
+    open_p[0] = close[0]
+    high = np.maximum(open_p, close) + 0.2
+    low = np.minimum(open_p, close) - 0.2
+    volume = np.ones(len(close), dtype=float) * 1000.0
+    index = pd.date_range(start, periods=len(close), freq="1h")
+    return pd.DataFrame(
+        {"Open": open_p, "High": high, "Low": low, "Close": close, "Volume": volume},
+        index=index,
+    )
+
+
+def test_entry_anchored_vwap_exit_closes_long_on_cross_below() -> None:
+    """Long trade exits when price closes back below the entry-anchored VWAP."""
+    ohlcv = _intraday_ohlcv([100.0, 101.0, 104.0, 106.0, 100.0, 99.0])
+    strategy = StrategyDefinition(
+        version="1",
+        name="entry_avwap_long_exit",
+        variant="advanced",
+        indicators=[IndicatorDef(name="px", type="close", params={})],
+        entry_rules=[RuleDef(indicator="px", condition=">", value=100.5)],
+        exit_rules=[],
+        position_management=PositionManagement(
+            size=0.02,
+            entry_anchored_vwap_exit=EntryAnchoredVwapExit(price_source="close"),
+        ),
+    )
+
+    result = BacktestRunner().run(ohlcv, strategy, params={})
+    assert result.metrics.total_trades == 1
+    assert result.trades[0]["entry_bar"] == 2
+    assert result.trades[0]["exit_bar"] == 5
+
+
+def test_entry_anchored_vwap_exit_closes_short_on_cross_above() -> None:
+    """Short trade exits when price closes back above the entry-anchored VWAP."""
+    ohlcv = _intraday_ohlcv([100.0, 99.0, 96.0, 94.0, 100.0, 101.0])
+    strategy = StrategyDefinition(
+        version="1",
+        name="entry_avwap_short_exit",
+        variant="advanced",
+        indicators=[IndicatorDef(name="px", type="close", params={})],
+        entry_rules=[],
+        exit_rules=[],
+        entry_rules_short=[RuleDef(indicator="px", condition="<", value=99.5)],
+        exit_rules_short=[],
+        position_management=PositionManagement(
+            size=0.02,
+            entry_anchored_vwap_exit=EntryAnchoredVwapExit(price_source="close"),
+        ),
+    )
+
+    result = BacktestRunner().run(ohlcv, strategy, params={})
+    assert result.metrics.total_trades == 1
+    assert result.trades[0]["entry_bar"] == 2
+    assert result.trades[0]["exit_bar"] == 5
 
 
 def test_backward_compat_legacy_strategy_unchanged(synthetic_ohlcv: pd.DataFrame) -> None:

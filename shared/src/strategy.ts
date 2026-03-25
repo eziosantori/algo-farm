@@ -113,6 +113,12 @@ export const ScaleOutSchema = z.object({
 
 export type ScaleOut = z.infer<typeof ScaleOutSchema>;
 
+export const EntryAnchoredVwapExitSchema = z.object({
+  price_source: z.enum(["hlc3", "close"]).default("hlc3"),
+});
+
+export type EntryAnchoredVwapExit = z.infer<typeof EntryAnchoredVwapExitSchema>;
+
 export const PositionManagementSchema = z.object({
   size: z.number().default(0.02),
   sl_pips: z.number().nullable().optional(),
@@ -127,6 +133,7 @@ export const PositionManagementSchema = z.object({
   scale_out: ScaleOutSchema.nullable().optional(),
   time_exit_bars: z.number().int().positive().nullable().optional(),
   trading_hours: TradingHoursSchema.nullable().optional(),
+  entry_anchored_vwap_exit: EntryAnchoredVwapExitSchema.nullable().optional(),
   // Phase D — dynamic risk sizing
   risk_pct_min: z.number().positive().max(1).optional(),
   risk_pct_max: z.number().positive().max(1).optional(),

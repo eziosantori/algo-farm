@@ -688,6 +688,28 @@ export const StrategyDefinitionSchema = z.object({
 export type StrategyDefinition = z.infer<typeof StrategyDefinitionSchema>;
 ```
 
+### Current engine/runtime additions
+
+The live engine schema also supports a runtime-only exit in `position_management`:
+
+```json
+{
+  "position_management": {
+    "size": 0.02,
+    "entry_anchored_vwap_exit": {
+      "price_source": "hlc3"
+    }
+  }
+}
+```
+
+Semantics:
+- `entry_anchored_vwap_exit` anchors VWAP on the first bar where the trade is actually open.
+- Supported `price_source`: `hlc3` (default) or `close`.
+- Long trades exit on `close` crossing below the runtime VWAP.
+- Short trades exit on `close` crossing above the runtime VWAP.
+- This is execution-time state, not a precomputed indicator, so it does not appear in `indicators[]`.
+
 ---
 
 ## 3. SQLite Schema
