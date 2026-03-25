@@ -7,11 +7,17 @@ import pytest
 
 from src.backtest.indicators import IndicatorRegistry
 from src.backtest.indicators.session import (
+    anchored_vwap,
+    anchored_vwap_lower,
+    anchored_vwap_upper,
     range_fakeout_long,
     range_fakeout_short,
     session_active,
     session_high,
     session_low,
+    vwap,
+    vwap_lower,
+    vwap_upper,
 )
 from src.backtest.strategy import _is_within_trading_hours
 from src.models import TradingHours
@@ -168,6 +174,229 @@ class TestSessionLow:
     def test_registered(self) -> None:
         fn = IndicatorRegistry.get("session_low")
         assert callable(fn)
+
+
+# ---------------------------------------------------------------------------
+# VWAP / Anchored VWAP
+# ---------------------------------------------------------------------------
+
+class TestVwapIndicators:
+    def test_vwap_resets_daily_and_carries_after_session(self) -> None:
+        ts = np.array(
+            pd.DatetimeIndex([
+                "2024-01-03 07:00",
+                "2024-01-03 08:00",
+                "2024-01-03 09:00",
+                "2024-01-03 10:00",
+                "2024-01-03 11:00",
+                "2024-01-04 07:00",
+                "2024-01-04 08:00",
+            ]),
+            dtype="datetime64[ns]",
+        )
+        close = np.array([90.0, 100.0, 110.0, 120.0, 130.0, 95.0, 200.0])
+        high = close.copy()
+        low = close.copy()
+        volume = np.array([1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 4.0])
+
+        result = vwap(
+            close,
+            high,
+            low,
+            volume,
+            ts,
+            from_time="08:00",
+            to_time="11:00",
+            price_source="close",
+        )
+
+        assert np.isnan(result[0])
+        assert result[1] == pytest.approx(100.0)
+        assert result[2] == pytest.approx(105.0)
+        assert result[3] == pytest.approx(112.5)
+        assert result[4] == pytest.approx(112.5)
+        assert np.isnan(result[5])
+        assert result[6] == pytest.approx(200.0)
+
+    def test_vwap_handles_zero_volume_without_infs(self) -> None:
+        ts = _ts_range("2024-01-03 08:00", "2024-01-03 10:00", "1h")
+        close = np.array([100.0, 110.0, 120.0])
+        high = close.copy()
+        low = close.copy()
+        volume = np.array([0.0, 0.0, 2.0])
+
+        result = vwap(
+            close,
+            high,
+            low,
+            volume,
+            ts,
+            from_time="08:00",
+            to_time="11:00",
+            price_source="close",
+        )
+
+        assert np.isnan(result[0])
+        assert np.isnan(result[1])
+        assert result[2] == pytest.approx(120.0)
+        assert not np.isinf(result).any()
+
+    def test_vwap_price_source_changes_result(self) -> None:
+        ts = _ts_range("2024-01-03 08:00", "2024-01-03 09:00", "1h")
+        close = np.array([100.0, 100.0])
+        high = np.array([110.0, 140.0])
+        low = np.array([90.0, 80.0])
+        volume = np.array([1.0, 1.0])
+
+        result_close = vwap(close, high, low, volume, ts, price_source="close")
+        result_hlc3 = vwap(close, high, low, volume, ts, price_source="hlc3")
+
+        assert result_close[-1] == pytest.approx(100.0)
+        assert result_hlc3[-1] == pytest.approx((100.0 + (140.0 + 80.0 + 100.0) / 3.0) / 2.0)
+        assert result_hlc3[-1] != pytest.approx(result_close[-1])
+
+    def test_vwap_bands_follow_weighted_stddev(self) -> None:
+        ts = _ts_range("2024-01-03 08:00", "2024-01-03 09:00", "1h")
+        close = np.array([100.0, 110.0])
+        high = close.copy()
+        low = close.copy()
+        volume = np.array([1.0, 1.0])
+
+        center = vwap(close, high, low, volume, ts, price_source="close", num_std=1.0)
+        upper = vwap_upper(close, high, low, volume, ts, price_source="close", num_std=1.0)
+        lower = vwap_lower(close, high, low, volume, ts, price_source="close", num_std=1.0)
+
+        assert center[0] == pytest.approx(100.0)
+        assert upper[0] == pytest.approx(100.0)
+        assert lower[0] == pytest.approx(100.0)
+        assert center[1] == pytest.approx(105.0)
+        assert upper[1] == pytest.approx(110.0)
+        assert lower[1] == pytest.approx(100.0)
+        assert np.all(upper >= center)
+        assert np.all(center >= lower)
+
+    def test_vwap_num_std_scales_band_distance(self) -> None:
+        ts = _ts_range("2024-01-03 08:00", "2024-01-03 09:00", "1h")
+        close = np.array([100.0, 110.0])
+        high = close.copy()
+        low = close.copy()
+        volume = np.array([1.0, 1.0])
+
+        upper_1 = vwap_upper(close, high, low, volume, ts, price_source="close", num_std=1.0)
+        upper_2 = vwap_upper(close, high, low, volume, ts, price_source="close", num_std=2.0)
+        center = vwap(close, high, low, volume, ts, price_source="close", num_std=1.0)
+
+        assert upper_2[-1] - center[-1] == pytest.approx(2 * (upper_1[-1] - center[-1]))
+
+    def test_anchored_vwap_start_hour_stays_nan_before_anchor_and_resets(self) -> None:
+        ts = np.array(
+            pd.DatetimeIndex([
+                "2024-01-03 08:00",
+                "2024-01-03 09:00",
+                "2024-01-03 10:00",
+                "2024-01-04 08:00",
+                "2024-01-04 09:00",
+            ]),
+            dtype="datetime64[ns]",
+        )
+        close = np.array([90.0, 100.0, 120.0, 80.0, 200.0])
+        high = close.copy()
+        low = close.copy()
+        volume = np.ones(len(close))
+
+        result = anchored_vwap(
+            close,
+            high,
+            low,
+            volume,
+            ts,
+            anchor_mode="start_hour",
+            anchor_time="09:00",
+            price_source="close",
+        )
+
+        assert np.isnan(result[0])
+        assert result[1] == pytest.approx(100.0)
+        assert result[2] == pytest.approx(110.0)
+        assert np.isnan(result[3])
+        assert result[4] == pytest.approx(200.0)
+
+    def test_anchored_vwap_session_open_accumulates_after_window(self) -> None:
+        ts = _ts_range("2024-01-03 08:00", "2024-01-03 11:00", "1h")
+        close = np.array([90.0, 100.0, 120.0, 140.0])
+        high = close.copy()
+        low = close.copy()
+        volume = np.ones(len(close))
+
+        result = anchored_vwap(
+            close,
+            high,
+            low,
+            volume,
+            ts,
+            anchor_mode="session_open",
+            from_time="09:00",
+            to_time="10:00",
+            price_source="close",
+        )
+
+        assert np.isnan(result[0])
+        assert result[1] == pytest.approx(100.0)
+        assert result[2] == pytest.approx(110.0)
+        assert result[3] == pytest.approx(120.0)
+
+    def test_anchored_vwap_bands_registered(self) -> None:
+        for name in {
+            "vwap",
+            "vwap_upper",
+            "vwap_lower",
+            "anchored_vwap",
+            "anchored_vwap_upper",
+            "anchored_vwap_lower",
+        }:
+            assert callable(IndicatorRegistry.get(name))
+
+    def test_anchored_vwap_bands_bound_center(self) -> None:
+        ts = _ts_range("2024-01-03 08:00", "2024-01-03 10:00", "1h")
+        close = np.array([90.0, 100.0, 120.0])
+        high = close.copy()
+        low = close.copy()
+        volume = np.ones(len(close))
+
+        center = anchored_vwap(
+            close,
+            high,
+            low,
+            volume,
+            ts,
+            anchor_mode="start_hour",
+            anchor_time="09:00",
+            price_source="close",
+        )
+        upper = anchored_vwap_upper(
+            close,
+            high,
+            low,
+            volume,
+            ts,
+            anchor_mode="start_hour",
+            anchor_time="09:00",
+            price_source="close",
+        )
+        lower = anchored_vwap_lower(
+            close,
+            high,
+            low,
+            volume,
+            ts,
+            anchor_mode="start_hour",
+            anchor_time="09:00",
+            price_source="close",
+        )
+
+        valid = ~np.isnan(center)
+        assert np.all(upper[valid] >= center[valid])
+        assert np.all(center[valid] >= lower[valid])
 
 
 # ---------------------------------------------------------------------------

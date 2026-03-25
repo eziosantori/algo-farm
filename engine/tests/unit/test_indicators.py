@@ -458,6 +458,8 @@ def test_all_required_indicators_registered() -> None:
         "momentum", "adx", "cci", "obv", "williamsr",
         "supertrend", "supertrend_direction",
         "session_active", "session_high", "session_low",
+        "vwap", "vwap_upper", "vwap_lower",
+        "anchored_vwap", "anchored_vwap_upper", "anchored_vwap_lower",
         "roc", "volume_sma",
         "htf_ema", "htf_sma",
     }

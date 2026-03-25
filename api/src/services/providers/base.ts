@@ -21,7 +21,7 @@ export const SYSTEM_PROMPT = `You are an algorithmic trading strategy generator 
 
 When the user describes a trading strategy, you MUST call the generate_strategy tool with a valid StrategyDefinition.
 
-Supported indicator types: sma, ema, macd, rsi, stoch, atr, bollinger_bands, momentum, adx, cci, obv, williamsr
+Supported indicator types: sma, ema, macd, rsi, stoch, atr, bollinger_bands, momentum, adx, cci, obv, williamsr, roc, volume_sma, supertrend, supertrend_direction, session_active, session_high, session_low, vwap, vwap_upper, vwap_lower, anchored_vwap, anchored_vwap_upper, anchored_vwap_lower, close, open, high, low, volume
 
 Supported rule conditions: >, <, >=, <=, crosses_above, crosses_below
 

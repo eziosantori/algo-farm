@@ -61,7 +61,18 @@ class StrategyComposer:
                 if "timestamps" in fn_param_names:
                     # Session and HTF indicators — pass timestamps as a positional array
                     timestamps = np.array(self_bt.data.index, dtype="datetime64[ns]")  # type: ignore[attr-defined]
-                    if "close" in fn_param_names:
+                    if "close" in fn_param_names and "volume" in fn_param_names:
+                        indicator = self_bt.I(  # type: ignore[attr-defined]
+                            fn,
+                            self_bt.data.Open,
+                            self_bt.data.High,
+                            self_bt.data.Low,
+                            self_bt.data.Close,
+                            self_bt.data.Volume,
+                            timestamps,
+                            **ind_params,
+                        )
+                    elif "close" in fn_param_names:
                         # htf_pattern: first param is open_, rest = high, low, close, timestamps
                         indicator = self_bt.I(  # type: ignore[attr-defined]
                             fn,
@@ -69,6 +80,16 @@ class StrategyComposer:
                             self_bt.data.High,
                             self_bt.data.Low,
                             self_bt.data.Close,
+                            timestamps,
+                            **ind_params,
+                        )
+                    elif "high" in fn_param_names and "low" in fn_param_names and "volume" in fn_param_names:
+                        indicator = self_bt.I(  # type: ignore[attr-defined]
+                            fn,
+                            self_bt.data.Close,
+                            self_bt.data.High,
+                            self_bt.data.Low,
+                            self_bt.data.Volume,
                             timestamps,
                             **ind_params,
                         )

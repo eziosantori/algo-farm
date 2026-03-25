@@ -24,6 +24,12 @@ export const IndicatorTypeSchema = z.enum([
   "session_active",
   "session_high",
   "session_low",
+  "vwap",
+  "vwap_upper",
+  "vwap_lower",
+  "anchored_vwap",
+  "anchored_vwap_upper",
+  "anchored_vwap_lower",
   // Phase B2 — fakeout indicators
   "range_fakeout_short",
   "range_fakeout_long",

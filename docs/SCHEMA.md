@@ -595,7 +595,9 @@ const Indicator = z.object({
   name: z.string().describe('Indicator ID'),
   type: z.enum([
     'sma', 'ema', 'macd', 'rsi', 'stoch', 'atr', 'bollinger_bands',
-    'momentum', 'adx', 'cci', 'obv', 'williamsr'
+    'momentum', 'adx', 'cci', 'obv', 'williamsr',
+    'vwap', 'vwap_upper', 'vwap_lower',
+    'anchored_vwap', 'anchored_vwap_upper', 'anchored_vwap_lower'
   ]),
   params: z.record(z.any()).default({})
 });
