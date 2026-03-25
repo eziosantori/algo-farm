@@ -22,9 +22,17 @@ class StrategyComposer:
         self,
         definition: StrategyDefinition,
         params: dict[str, Any],
+        instrument: str = "",
+        timeframe: str = "",
     ) -> type:
-        """Build a backtesting.Strategy subclass from a StrategyDefinition."""
+        """Build a backtesting.Strategy subclass from a StrategyDefinition.
+
+        ``instrument`` and ``timeframe`` are used to look up per-pair overrides
+        from ``definition.param_overrides``; if absent or empty the global
+        indicator params are used unchanged.
+        """
         registry = IndicatorRegistry
+        _pair_overrides = definition.param_overrides.get(instrument, {}).get(timeframe, {})
 
         # Mutable state shared between bars; reset when a trade closes.
         state: dict[str, Any] = {
@@ -47,7 +55,7 @@ class StrategyComposer:
         def init(self_bt: Strategy) -> None:  # type: ignore[type-arg]
             for ind_def in definition.indicators:
                 fn = registry.get(ind_def.type)
-                merged = {**ind_def.params, **params}
+                merged = {**ind_def.params, **params, **_pair_overrides}
                 fn_param_names = _get_fn_params(fn)
                 ind_params = {k: v for k, v in merged.items() if k in fn_param_names}
                 if "timestamps" in fn_param_names:

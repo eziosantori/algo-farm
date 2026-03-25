@@ -190,6 +190,10 @@ class StrategyDefinition(BaseModel):
     suppression_gates: list[SuppressionGate] = []
     # Phase D — trigger holds: keep crosses_above/crosses_below active for N bars
     trigger_holds: list[TriggerHold] = []
+    # Per-pair parameter overrides: instrument → timeframe → {param: value}
+    # Partial overrides are valid; missing params fall back to the global indicator params.
+    # Example: {"XAUUSD": {"H4": {"period": 21, "multiplier": 4.0}}}
+    param_overrides: dict[str, dict[str, dict[str, Any]]] = {}
 
 
 @dataclass

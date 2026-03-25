@@ -24,7 +24,19 @@
       "Bash(python3 -c \":*)",
       "Bash(echo \"exit:$?\")",
       "Bash(python -m pytest tests -q)",
-      "Bash(python run.py --strategy strategies/*)"
+      "Bash(python run.py --strategy strategies/*)",
+      "Bash(python -m pytest tests/unit/test_patterns.py tests/integration/test_signal_gates.py -v)",
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(python3:*)",
+      "Bash(for sym:*)",
+      "Bash(do echo:*)",
+      "Bash(.venv/bin/python run.py --strategy strategies/draft/vbb_iter10.json --instruments $sym --timeframes D1 --data-dir ./data)",
+      "Bash(done)",
+      "Bash(npx --prefix shared tsc --noEmit)",
+      "Bash(node_modules/.bin/tsc --noEmit -p shared/tsconfig.json)",
+      "Bash(python -m pytest tests/unit/test_param_overrides.py -v)"
     ]
   }
 }

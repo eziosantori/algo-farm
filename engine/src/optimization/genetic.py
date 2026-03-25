@@ -109,7 +109,7 @@ class GeneticOptimizer:
 
                     current += 1
                     try:
-                        result = runner.run(ohlcv, definition, params)
+                        result = runner.run(ohlcv, definition, params, instrument, timeframe)
                     except Exception as exc:
                         logger.error(
                             "Backtest failed (%s/%s %s): %s",

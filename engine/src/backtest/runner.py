@@ -25,8 +25,10 @@ class BacktestRunner:
         ohlcv: pd.DataFrame,
         definition: StrategyDefinition,
         params: dict[str, object],
+        instrument: str = "",
+        timeframe: str = "",
     ) -> RunResult:
-        strategy_cls = StrategyComposer().build_class(definition, params)
+        strategy_cls = StrategyComposer().build_class(definition, params, instrument, timeframe)
         # Auto-scale initial cash so backtesting.py can place at least a few integer
         # units even for high-price instruments (BTC ~70K, Gold ~2K, etc.).
         # Relative metrics (Sharpe, return %) are unaffected by the absolute cash level.

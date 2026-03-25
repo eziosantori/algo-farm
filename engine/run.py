@@ -224,6 +224,10 @@ def main(argv: list[str] | None = None) -> int:
                     logger.warning("Robustness: data not found (%s/%s): %s", instrument, timeframe, exc)
                     continue
 
+                # Apply per-pair param overrides on top of best_params for this instrument/timeframe
+                _pair_ov = definition.param_overrides.get(instrument, {}).get(timeframe, {})
+                effective_params = {**best_params, **_pair_ov} if _pair_ov else best_params
+
                 # Signals collected for composite scorer
                 oos_sharpe: float | None = None
                 is_sharpe: float | None = None
@@ -235,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.oos_pct > 0:
                     try:
                         from src.robustness.oos import OOSValidator
-                        oos_res = OOSValidator(oos_pct=args.oos_pct).validate(ohlcv, definition, best_params)
+                        oos_res = OOSValidator(oos_pct=args.oos_pct).validate(ohlcv, definition, effective_params)
                         emit({"type": "oos_result", "job_id": job_id,
                               "instrument": instrument, "timeframe": timeframe,
                               "params": best_params, **oos_res})
@@ -249,17 +253,17 @@ def main(argv: list[str] | None = None) -> int:
                         from src.robustness.walk_forward import WalkForwardAnalyzer
                         wf_res = WalkForwardAnalyzer(
                             n_windows=args.wf_windows, train_pct=args.wf_train_pct
-                        ).analyze(ohlcv, definition, best_params)
+                        ).analyze(ohlcv, definition, effective_params)
                         emit({"type": "wf_result", "job_id": job_id,
                               "instrument": instrument, "timeframe": timeframe,
-                              "params": best_params, **wf_res})
+                              "params": effective_params, **wf_res})
                         wf_efficiency = wf_res.get("wf_efficiency")
                     except Exception as exc:
                         logger.warning("Walk-forward failed (%s/%s): %s", instrument, timeframe, exc)
 
                 if args.monte_carlo or args.permutation_test:
                     try:
-                        full_result = rb_runner.run(ohlcv, definition, best_params)
+                        full_result = rb_runner.run(ohlcv, definition, effective_params, instrument, timeframe)
                         trades = full_result.trades
 
                         if args.monte_carlo:
@@ -267,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
                             mc_res = MonteCarloSimulator(n_runs=args.mc_runs).simulate(trades)
                             emit({"type": "mc_result", "job_id": job_id,
                                   "instrument": instrument, "timeframe": timeframe,
-                                  "params": best_params, **mc_res})
+                                  "params": effective_params, **mc_res})
                             # Derive a Sharpe-like signal: use P5 return as proxy
                             # (MC doesn't compute Sharpe directly; use return_p5 mapped)
                             mc_p5_sharpe = mc_res.get("return_p5")
@@ -277,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
                             perm_res = PermutationTest(n_runs=args.permutation_runs).test(trades)
                             emit({"type": "permutation_result", "job_id": job_id,
                                   "instrument": instrument, "timeframe": timeframe,
-                                  "params": best_params, **perm_res})
+                                  "params": effective_params, **perm_res})
                             permutation_p_value = perm_res.get("p_value")
 
                     except Exception as exc:
@@ -286,10 +290,10 @@ def main(argv: list[str] | None = None) -> int:
                 if args.param_sensitivity:
                     try:
                         from src.robustness.sensitivity import ParameterSensitivityAnalyzer
-                        sens_res = ParameterSensitivityAnalyzer().analyze(ohlcv, definition, best_params)
+                        sens_res = ParameterSensitivityAnalyzer().analyze(ohlcv, definition, effective_params)
                         emit({"type": "sensitivity_result", "job_id": job_id,
                               "instrument": instrument, "timeframe": timeframe,
-                              "params": best_params, **sens_res})
+                              "params": effective_params, **sens_res})
                         overall_stability = sens_res.get("overall_stability")
                         # Use base_sharpe from sensitivity as IS sharpe when oos_pct not used
                         if is_sharpe is None:
