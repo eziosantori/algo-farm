@@ -6,7 +6,8 @@
     "dev:ui": "pnpm --filter ui dev",
     "test:api": "pnpm --filter api test",
     "test": "pnpm --filter api test",
-    "workflow": "claude --dangerously-skip-permissions --agent workflow-orchestrator"
+    "workflow": "claude --dangerously-skip-permissions --agent workflow-orchestrator",
+    "workflow:copilot": "code --chat --chat-agent-auto-approve --chat-agent workflow-orchestrator"
   },
   "packageManager": "pnpm@10.6.5",
   "engines": {

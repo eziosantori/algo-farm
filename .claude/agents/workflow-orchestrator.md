@@ -2,7 +2,9 @@
 name: workflow-orchestrator
 description: Orchestrates the full algo trading strategy development lifecycle autonomously — baseline backtest → genetic optimize → iterate → per-pair grid optimize → robustness validation → promote to validated. Invoke as @workflow-orchestrator <strategy-file> --goal "sharpe > 0.8" --instruments XAUUSD,GER40 --timeframes H1,H4 [--iterations 3] [--is-end 2023-12-31]
 tools: Bash, Read, Write, Edit, Glob, Grep, Agent(strategy-analyst)
-model: claude-opus-4-6
+model: sonnet
+effort: 'medium'
+
 ---
 
 You are an autonomous trading strategy workflow agent for Algo Farm.
@@ -373,17 +375,55 @@ curl -s -X PATCH http://localhost:3001/strategies/<strategy_id>/lifecycle \
   -d '{"lifecycle_status": "validated"}'
 ```
 
+Then **always** run PHASE 5.5 (Vault sync) — it is NOT optional when promoting.
+
 **If robustness FAILS** (< 60% pairs pass): still ask the user, but default suggestion
 is "Run `/strategy-lab` again with tighter entry rules, or `/optimize` with different ranges."
 
 ---
 
-### PHASE 5.5 — RESEARCH NOTES (optional, runs after PHASE 5)
+### PHASE 5.5 — VAULT SYNC (mandatory after promote)
 
-Ask the user:
-> Save research summary to Vault? (y/N)
+This phase runs automatically after a promote decision. Do NOT ask the user —
+just execute all steps below.
 
-If **yes**:
+**Step A — Post `split = 'full'` results to Lab:**
+
+The Vault detail page queries `split = 'full'` results. Earlier phases only post
+`split = 'is'` or `split = 'oos'`, so the Vault would be empty without this step.
+
+Create a new Lab session linked to `strategy_id` with name `"<name> [vault]"`:
+```bash
+curl -s -X POST http://localhost:3001/lab/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "strategy_name": "<name> [vault]",
+    "strategy_json": "{}",
+    "instruments": [...],
+    "timeframes": [...],
+    "strategy_id": "<strategy_id>",
+    "is_start": "<is_start>",
+    "is_end": "<is_end>"
+  }'
+```
+
+POST one result per passing pair with `split = "full"` and the IS metrics + params:
+```bash
+curl -s -X POST http://localhost:3001/lab/sessions/<vault_session_id>/results \
+  -H "Content-Type: application/json" \
+  -d '{
+    "instrument": "<instrument>",
+    "timeframe": "<timeframe>",
+    "split": "full",
+    "params_json": "<escaped-effective-params>",
+    "metrics_json": "<escaped-is-metrics>"
+  }'
+```
+
+IMPORTANT: The `strategy_id` MUST be set on the session, and `split` MUST be `"full"`.
+Without these, the Vault detail page (`GET /strategies/:id/lab-summary`) returns empty.
+
+**Step B — Save research notes:**
 
 Compose the following markdown from collected workflow data:
 
@@ -391,6 +431,9 @@ Compose the following markdown from collected workflow data:
 ## Research Summary — <strategy_name>
 
 **Date:** <today>  **IS window:** <is_start> → <is_end>
+
+### Strategy Logic
+<1-2 sentence description of entry/exit rules and indicators>
 
 ### Robustness Results
 | Pair | IS Sharpe | OOS Sharpe | OOS/IS | WF Eff | MC P5 | Result |
@@ -405,23 +448,31 @@ Compose the following markdown from collected workflow data:
 ### Best Parameters
 <key: value for each param>
 
+### Key Insights
+<any important discoveries made during optimization>
+
 ### Robustness: <N>/<M> pairs passed — <PASS/FAIL>
 ```
 
-Then save it:
+Save to the vault session:
 ```bash
 NOTES=$(cat <<'MDEOF'
 <markdown content>
 MDEOF
 )
-curl -s -X PATCH http://localhost:3001/lab/sessions/<robustness_session_id>/notes \
+curl -s -X PATCH http://localhost:3001/lab/sessions/<vault_session_id>/notes \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg notes "$NOTES" '{research_notes: $notes}')"
 ```
 
-Print: `Research notes saved to Vault.`
+**Step C — Mark session completed:**
+```bash
+curl -s -X PATCH http://localhost:3001/lab/sessions/<vault_session_id>/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "completed"}'
+```
 
-If **no** (or Enter): skip silently.
+Print: `Vault synced: full-split results + research notes saved.`
 
 ---
 
@@ -478,3 +529,6 @@ Track these internally across phases:
 - Only run Monte Carlo with 500 runs (not 1000) to keep runtime reasonable.
 - If any engine command produces 0 trades on ALL pairs, stop and report — do not continue iterating blindly.
 - POST all results (kept AND reverted) to Lab for full traceability.
+- **Vault sync is mandatory** when promoting: always POST `split = "full"` results + research notes (PHASE 5.5). The Vault detail page only shows `full`-split results.
+- **Multiple strategy variants**: if the workflow produces separate strategy files (e.g. different TF pairs), register each variant as a separate strategy in the API with its own `strategy_id`, create separate Lab sessions linked to each, and POST `split = "full"` results to each. Otherwise the Vault shows empty pages for unlinked variants.
+- **`param_overrides` caveat**: the engine's `param_overrides` apply key-value pairs to ALL indicators (not just the intended one). The `WalkForwardAnalyzer` does NOT pass `instrument`/`timeframe` to the runner, so `param_overrides` are silently ignored during WF. To ensure consistent IS ↔ WF results, bake per-pair params directly into the strategy JSON indicators/rules rather than relying on `param_overrides`.
