@@ -186,6 +186,11 @@ export const StrategyDefinitionSchema = z.object({
   pattern_groups: z.array(PatternGroupSchema).optional().default([]),
   suppression_gates: z.array(SuppressionGateSchema).optional().default([]),
   trigger_holds: z.array(TriggerHoldSchema).optional().default([]),
+  // Per-pair parameter overrides: { instrument: { timeframe: { key: value } } }
+  param_overrides: z
+    .record(z.record(z.record(z.unknown())))
+    .optional()
+    .default({}),
 });
 
 export type StrategyDefinition = z.infer<typeof StrategyDefinitionSchema>;

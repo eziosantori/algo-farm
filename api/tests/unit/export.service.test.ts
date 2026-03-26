@@ -34,6 +34,7 @@ const smaRsiStrategy: StrategyDefinition = {
   pattern_groups: [],
   suppression_gates: [],
   trigger_holds: [],
+  param_overrides: {},
 };
 
 // Fixture: bidirectional strategy with ATR-based SL/TP
@@ -69,6 +70,7 @@ const biDirStrategy: StrategyDefinition = {
   pattern_groups: [],
   suppression_gates: [],
   trigger_holds: [],
+  param_overrides: {},
 };
 
 // ---------------------------------------------------------------------------
@@ -111,8 +113,9 @@ describe("CTraderAdapter", () => {
     const code = adapter.generate(smaRsiStrategy);
     expect(code).toContain("protected override void OnBar()");
     expect(code).toContain("Bars.ClosePrices.LastValue > _trendSma.Result.LastValue");
-    expect(code).toContain("_rsi14.Result.LastValue > 50");
-    expect(code).toContain("_rsi14.Result.LastValue < 40");
+    // Threshold values are now exposed as C# parameters for per-pair opset tuning
+    expect(code).toContain("_rsi14.Result.LastValue > Rsi14Threshold");
+    expect(code).toContain("_rsi14.Result.LastValue < Rsi14Threshold2");
   });
 
   it("generates ATR-based SL/TP expressions", () => {

@@ -19,6 +19,7 @@ const validStrategy: StrategyDefinition = {
   pattern_groups: [],
   suppression_gates: [],
   trigger_holds: [],
+  param_overrides: {},
 };
 
 describe("Strategies Routes", () => {

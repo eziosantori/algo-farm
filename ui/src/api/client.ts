@@ -186,11 +186,18 @@ export interface DeploymentSummary {
 // Export helpers
 // ---------------------------------------------------------------------------
 
+export type ExportFormat = "ctrader" | "pine" | "opset";
+
 export async function downloadExport(
   id: string,
-  format: "ctrader" | "pine"
+  format: ExportFormat,
+  options?: { instrument?: string; timeframe?: string },
 ): Promise<void> {
-  const res = await fetch(`${BASE_URL}/strategies/${id}/export/${format}`);
+  const qs = new URLSearchParams();
+  if (options?.instrument) qs.set("instrument", options.instrument);
+  if (options?.timeframe) qs.set("timeframe", options.timeframe);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const res = await fetch(`${BASE_URL}/strategies/${id}/export/${format}${suffix}`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
@@ -198,7 +205,8 @@ export async function downloadExport(
     );
   }
   const blob = await res.blob();
-  const ext = format === "ctrader" ? "cs" : "pine";
+  const extMap: Record<ExportFormat, string> = { ctrader: "cs", pine: "pine", opset: "cbotset" };
+  const ext = extMap[format];
   const disposition = res.headers.get("Content-Disposition") ?? "";
   const match = disposition.match(/filename="([^"]+)"/);
   const filename = match?.[1] ?? `strategy.${ext}`;
@@ -212,10 +220,15 @@ export async function downloadExport(
 
 export async function previewExport(
   id: string,
-  format: "ctrader" | "pine"
+  format: ExportFormat,
+  options?: { instrument?: string; timeframe?: string },
 ): Promise<{ code: string; filename: string }> {
+  const qs = new URLSearchParams();
+  if (options?.instrument) qs.set("instrument", options.instrument);
+  if (options?.timeframe) qs.set("timeframe", options.timeframe);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
   const res = await fetch(
-    `${BASE_URL}/strategies/${id}/export/${format}/preview`
+    `${BASE_URL}/strategies/${id}/export/${format}/preview${suffix}`
   );
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

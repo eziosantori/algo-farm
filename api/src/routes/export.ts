@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { getDb } from "../db/client.js";
 import { StrategyRepository } from "../db/repositories/strategy.repo.js";
-import { getExportAdapter } from "../services/export/index.js";
+import { getExportAdapter, generateOpsetXml } from "../services/export/index.js";
 
 const router = Router();
 
@@ -19,7 +19,7 @@ router.get(
     if (!adapter) {
       res
         .status(400)
-        .json({ error: "UNSUPPORTED_FORMAT", message: `Format '${format}' is not supported. Use 'ctrader' or 'pine'.` });
+        .json({ error: "UNSUPPORTED_FORMAT", message: `Format '${format}' is not supported. Use 'ctrader', 'pine', or 'opset'.` });
       return;
     }
 
@@ -29,8 +29,20 @@ router.get(
       return;
     }
 
-    const code = adapter.generate(record.definition);
-    const filename = `${record.definition.name}.${adapter.fileExtension}`;
+    // For opset, support per-pair generation via query params
+    let code: string;
+    let filename: string;
+    if (format === "opset") {
+      const instrument = req.query["instrument"] as string | undefined;
+      const timeframe = req.query["timeframe"] as string | undefined;
+      code = generateOpsetXml(record.definition, instrument, timeframe);
+      const suffix = instrument && timeframe ? `_${instrument}_${timeframe}` : "";
+      filename = `${record.definition.name}${suffix}.${adapter.fileExtension}`;
+    } else {
+      code = adapter.generate(record.definition);
+      filename = `${record.definition.name}.${adapter.fileExtension}`;
+    }
+
     res.json({ code, filename });
   }
 );
@@ -43,7 +55,7 @@ router.get("/:id/export/:format", (req: Request, res: Response): void => {
   if (!adapter) {
     res
       .status(400)
-      .json({ error: "UNSUPPORTED_FORMAT", message: `Format '${format}' is not supported. Use 'ctrader' or 'pine'.` });
+      .json({ error: "UNSUPPORTED_FORMAT", message: `Format '${format}' is not supported. Use 'ctrader', 'pine', or 'opset'.` });
     return;
   }
 
@@ -53,8 +65,19 @@ router.get("/:id/export/:format", (req: Request, res: Response): void => {
     return;
   }
 
-  const code = adapter.generate(record.definition);
-  const filename = `${record.definition.name}.${adapter.fileExtension}`;
+  // For opset, support per-pair generation via query params
+  let code: string;
+  let filename: string;
+  if (format === "opset") {
+    const instrument = req.query["instrument"] as string | undefined;
+    const timeframe = req.query["timeframe"] as string | undefined;
+    code = generateOpsetXml(record.definition, instrument, timeframe);
+    const suffix = instrument && timeframe ? `_${instrument}_${timeframe}` : "";
+    filename = `${record.definition.name}${suffix}.${adapter.fileExtension}`;
+  } else {
+    code = adapter.generate(record.definition);
+    filename = `${record.definition.name}.${adapter.fileExtension}`;
+  }
 
   res.setHeader("Content-Type", adapter.mimeType);
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

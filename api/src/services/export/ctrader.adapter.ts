@@ -165,6 +165,29 @@ export class CTraderAdapter implements ExportAdapter {
       }
     }
 
+    // Extract entry/exit rule thresholds as C# parameters (for opset per-pair tuning)
+    // Each unique (indicator, value) pair gets its own parameter property
+    const thresholdProps = new Map<string, string>(); // "indicator|value" → C# property name
+    const thresholdCounts = new Map<string, number>(); // indicator → count for disambiguation
+    for (const rule of allRules) {
+      if (rule.value != null && rule.compare_to == null) {
+        const ruleKey = `${rule.indicator}|${rule.value}`;
+        if (!thresholdProps.has(ruleKey)) {
+          const indName = toPascalCase(rule.indicator);
+          const count = thresholdCounts.get(rule.indicator) ?? 0;
+          thresholdCounts.set(rule.indicator, count + 1);
+          const suffix = count === 0 ? "" : String(count + 1);
+          const propName = `${indName}Threshold${suffix}`;
+          thresholdProps.set(ruleKey, propName);
+          const csharpType = Number.isInteger(rule.value) ? "int" : "double";
+          paramLines.push(
+            `        [Parameter("${indName} Threshold${suffix ? " " + suffix : ""}", DefaultValue = ${rule.value})]`,
+            `        public ${csharpType} ${propName} { get; set; }`
+          );
+        }
+      }
+    }
+
     // Condition builder
     const getAccessor = (name: string): string => {
       const price = priceAccessor(name);
@@ -178,10 +201,14 @@ export class CTraderAdapter implements ExportAdapter {
 
     const buildCondition = (rule: RuleDef): string => {
       const lhs = getAccessor(rule.indicator);
+      // Use C# parameter property for threshold values (allows per-pair opset override)
+      const ruleKey = `${rule.indicator}|${rule.value}`;
       const rhs =
         rule.compare_to != null
           ? getAccessor(rule.compare_to)
-          : String(rule.value ?? 0);
+          : thresholdProps.has(ruleKey)
+            ? thresholdProps.get(ruleKey)!
+            : String(rule.value ?? 0);
 
       switch (rule.condition) {
         case ">":

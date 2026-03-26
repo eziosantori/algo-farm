@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import type { StrategySummary } from "../../api/client.ts";
+import type { StrategySummary, ExportFormat } from "../../api/client.ts";
 import { downloadExport } from "../../api/client.ts";
 
 // ---------------------------------------------------------------------------
@@ -38,12 +38,12 @@ interface Props {
 }
 
 export function StrategyCard({ strategy }: Props) {
-  const [downloading, setDownloading] = useState<"ctrader" | "pine" | null>(
+  const [downloading, setDownloading] = useState<ExportFormat | null>(
     null
   );
   const [error, setError] = useState<string | null>(null);
 
-  async function handleDownload(format: "ctrader" | "pine") {
+  async function handleDownload(format: ExportFormat) {
     setDownloading(format);
     setError(null);
     try {
