@@ -29,6 +29,12 @@ class IndicatorDef(BaseModel):
         "williamsr",
         "roc",
         "volume_sma",
+        # Ichimoku Cloud indicators
+        "ichimoku_tenkan",
+        "ichimoku_kijun",
+        "ichimoku_senkou_a",
+        "ichimoku_senkou_b",
+        "ichimoku_chikou",
         # Phase D — higher-timeframe indicators
         "htf_ema",
         "htf_sma",
