@@ -9,6 +9,9 @@ from src.backtest.indicators import IndicatorRegistry
 from src.backtest.indicators.trend import ema, htf_ema, htf_sma, macd, sma, supertrend, supertrend_direction
 from src.backtest.indicators.momentum import cci, obv, roc, rsi, stoch, volume_sma, williamsr
 from src.backtest.indicators.volatility import adx, atr, bollinger_bands, bollinger_upper, bollinger_lower, bollinger_basis
+from src.backtest.indicators.ichimoku import (
+    ichimoku_tenkan, ichimoku_kijun, ichimoku_senkou_a, ichimoku_senkou_b, ichimoku_chikou,
+)
 
 
 @pytest.fixture()
@@ -462,8 +465,94 @@ def test_all_required_indicators_registered() -> None:
         "anchored_vwap", "anchored_vwap_upper", "anchored_vwap_lower",
         "roc", "volume_sma",
         "htf_ema", "htf_sma",
+        "ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a",
+        "ichimoku_senkou_b", "ichimoku_chikou",
     }
     registered = set(IndicatorRegistry.list_all())
     # momentum is listed in the plan but maps to an alias — accept missing for now
     missing = required - registered - {"momentum"}
     assert not missing, f"Missing indicators: {missing}"
+
+
+# --- Ichimoku Cloud ---
+
+
+@pytest.fixture()
+def ohlc_data() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """100-bar OHLC data with a mild uptrend."""
+    rng = np.random.default_rng(42)
+    close = np.cumsum(rng.normal(0.001, 0.01, 100)) + 1.5
+    high = close + rng.uniform(0.001, 0.01, 100)
+    low = close - rng.uniform(0.001, 0.01, 100)
+    return close, high, low
+
+
+def test_ichimoku_tenkan_length(ohlc_data: tuple[np.ndarray, np.ndarray, np.ndarray]) -> None:
+    close, high, low = ohlc_data
+    result = ichimoku_tenkan(close, high, low)
+    assert len(result) == len(close)
+
+
+def test_ichimoku_tenkan_warmup(ohlc_data: tuple[np.ndarray, np.ndarray, np.ndarray]) -> None:
+    close, high, low = ohlc_data
+    result = ichimoku_tenkan(close, high, low, tenkan_period=9)
+    assert np.isnan(result[7])       # period-2 is NaN
+    assert not np.isnan(result[8])   # period-1 is first valid
+
+
+def test_ichimoku_kijun_warmup(ohlc_data: tuple[np.ndarray, np.ndarray, np.ndarray]) -> None:
+    close, high, low = ohlc_data
+    result = ichimoku_kijun(close, high, low, kijun_period=26)
+    assert np.isnan(result[24])
+    assert not np.isnan(result[25])
+
+
+def test_ichimoku_senkou_b_warmup(ohlc_data: tuple[np.ndarray, np.ndarray, np.ndarray]) -> None:
+    close, high, low = ohlc_data
+    result = ichimoku_senkou_b(close, high, low, senkou_b_period=52)
+    assert np.isnan(result[50])
+    assert not np.isnan(result[51])
+
+
+def test_ichimoku_senkou_a_between_tenkan_kijun(ohlc_data: tuple[np.ndarray, np.ndarray, np.ndarray]) -> None:
+    close, high, low = ohlc_data
+    tenkan = ichimoku_tenkan(close, high, low)
+    kijun = ichimoku_kijun(close, high, low)
+    senkou_a = ichimoku_senkou_a(close, high, low)
+    # Where all three are valid, senkou_a should be the midpoint
+    valid = ~np.isnan(tenkan) & ~np.isnan(kijun) & ~np.isnan(senkou_a)
+    np.testing.assert_allclose(senkou_a[valid], (tenkan[valid] + kijun[valid]) / 2.0)
+
+
+def test_ichimoku_chikou_is_shifted_close(ohlc_data: tuple[np.ndarray, np.ndarray, np.ndarray]) -> None:
+    close, high, low = ohlc_data
+    displacement = 26
+    chikou = ichimoku_chikou(close, high, low, displacement=displacement)
+    # chikou[i] should equal close[i + displacement]
+    n = len(close)
+    for i in range(n - displacement):
+        assert chikou[i] == close[i + displacement], f"Mismatch at index {i}"
+    # Trailing values should be NaN
+    for i in range(n - displacement, n):
+        assert np.isnan(chikou[i])
+
+
+def test_ichimoku_constant_input() -> None:
+    close = np.ones(100) * 1.5
+    high = np.ones(100) * 1.5
+    low = np.ones(100) * 1.5
+    tenkan = ichimoku_tenkan(close, high, low)
+    kijun = ichimoku_kijun(close, high, low)
+    senkou_a = ichimoku_senkou_a(close, high, low)
+    senkou_b = ichimoku_senkou_b(close, high, low)
+    # All lines should converge to 1.5
+    for arr in [tenkan, kijun, senkou_a, senkou_b]:
+        valid = arr[~np.isnan(arr)]
+        np.testing.assert_allclose(valid, 1.5)
+
+
+def test_ichimoku_registered() -> None:
+    for name in ["ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a",
+                  "ichimoku_senkou_b", "ichimoku_chikou"]:
+        fn = IndicatorRegistry.get(name)
+        assert callable(fn)

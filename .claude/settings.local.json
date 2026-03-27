@@ -36,7 +36,8 @@
       "Bash(done)",
       "Bash(npx --prefix shared tsc --noEmit)",
       "Bash(node_modules/.bin/tsc --noEmit -p shared/tsconfig.json)",
-      "Bash(python -m pytest tests/unit/test_param_overrides.py -v)"
+      "Bash(python -m pytest tests/unit/test_param_overrides.py -v)",
+      "Bash(find /Users/esantori/git/personal/algo-farm/api -name *.test.ts)"
     ]
   }
 }

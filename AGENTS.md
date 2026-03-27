@@ -310,10 +310,9 @@ Strategy files on disk: `engine/strategies/{draft,optimizing,validated,productio
 
 **Valid `indicator.type` values:**
 
-```
-sma  ema  macd  rsi  stoch  atr  bollinger_bands  adx  cci  obv  williamsr
-supertrend  supertrend_direction
-```
+**59+ types** supported across 9 categories: Trend, Momentum, Volatility, Volume, Session/Intraday, Candlestick Patterns, Ichimoku Cloud, Higher Timeframe, and OHLCV Primitives.
+
+**See [docs/INDICATORS.md](docs/INDICATORS.md) for complete reference** with parameters, examples, warmup periods, and best practices.
 
 **`param_grid.json` structure** (for `/optimize`):
 

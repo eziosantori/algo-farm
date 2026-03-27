@@ -57,6 +57,12 @@ export const IndicatorTypeSchema = z.enum([
   "spinning_top",
   "harami",
   "htf_pattern",
+  // Ichimoku Cloud
+  "ichimoku_tenkan",
+  "ichimoku_kijun",
+  "ichimoku_senkou_a",
+  "ichimoku_senkou_b",
+  "ichimoku_chikou",
   // OHLCV primitives
   "close",
   "open",
