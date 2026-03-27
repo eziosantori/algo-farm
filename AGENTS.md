@@ -111,15 +111,42 @@ All Lab sessions and results are recorded in the API database and visible in the
 Claude Code slash commands are the fastest way to work with strategies **one phase at a time**.
 Run them from the project root (`/Users/esantori/git/personal/algo-farm`).
 
+### `/design-strategy "<description>" [--instruments X,Y] [--timeframes H1,H4] [--target "sharpe > 1.0"]`
+
+**Multi-agent Strategy Design Board** — thorough analysis before creation.
+
+Runs 5 specialist subagents (technical analyst, market-structure analyst, risk analyst, advocate, critic) that debate the idea before a Sonnet composer synthesizes the final JSON. Blocking issues are resolved through up to 2 debate rounds.
+
+```
+/design-strategy "RSI mean-reversion with SuperTrend filter for XAUUSD H1" \
+  --instruments XAUUSD --timeframes H1,H4 --target "sharpe > 0.8"
+```
+
+Saves:
+- Strategy: `engine/strategies/draft/<name>.json`
+- Design report: `docs/ideas/strategies/<name>_design.md` — full discussion + ready-to-run `@workflow-orchestrator` prompt
+
+**Use this when:** the strategy is non-trivial, multi-instrument, or you want indicator/risk design reviewed before spending backtest time.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--instruments` | `EURUSD` | Comma-separated list |
+| `--timeframes` | `H1` | Comma-separated list |
+| `--target` | `sharpe > 0.5` | Performance goal passed to advocate/critic |
+
+Agent calls: 6 (standard) or 8 (with debate Round 2). Estimated cost: $0.03–0.10.
+
+---
+
 ### `/new-strategy <description>`
 
-Generate a valid `StrategyDefinition` JSON from natural language.
+Generate a valid `StrategyDefinition` JSON from natural language — **quick, single-shot**.
 
 ```
 /new-strategy "RSI mean-reversion: buy when RSI < 30 and SuperTrend is up, exit when RSI > 70"
 ```
 
-Saves to `engine/strategies/draft/<name>.json`.
+Saves to `engine/strategies/draft/<name>.json`. Use this for simple strategies or rapid prototyping. Use `/design-strategy` for thorough multi-perspective analysis.
 
 ---
 
