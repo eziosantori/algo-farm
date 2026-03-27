@@ -6,6 +6,7 @@ import type {
   IndicatorType,
 } from "@algo-farm/shared/strategy";
 import { getPineSpec } from "./indicator-map.js";
+import { generateStrategyPrinciples } from "./strategy-comment.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -166,6 +167,7 @@ export class PineAdapter implements ExportAdapter {
       lines.push(`if shortExit`, `    strategy.close("Short")`);
     }
 
-    return lines.join("\n");
+    const header = generateStrategyPrinciples(strategy, "pine");
+    return header + "\n" + lines.join("\n");
   }
 }

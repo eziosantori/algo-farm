@@ -472,7 +472,111 @@ curl -s -X PATCH http://localhost:3001/lab/sessions/<vault_session_id>/status \
   -d '{"status": "completed"}'
 ```
 
-Print: `Vault synced: full-split results + research notes saved.`
+**Step D — Pre-generate export files:**
+
+Trigger file generation for the promoted strategy. Saves `.cs`, `.pine`, and `.cbotset`
+(default + one per-pair file for each entry in `param_overrides`) to disk at
+`engine/strategies/validated/<name>_exports/` and records `export_dir` in the DB.
+
+```bash
+curl -s -X POST http://localhost:3001/strategies/<strategy_id>/export/generate \
+  -H "Content-Type: application/json"
+```
+
+Expected response: `{"success":true,"files":[...]}`.
+If the endpoint returns an error, log the message but do NOT abort — vault sync is the
+primary goal and export file generation is best-effort.
+
+Print: `Vault synced: full-split results + research notes saved. Export files pre-generated: .cs, .pine, .cbotset`
+
+---
+
+### PHASE 5.6 — LLM EXPORT GENERATION (mandatory after Phase 5.5)
+
+This phase runs automatically after Phase 5.5. You (the workflow agent) generate
+production-quality cTrader and Pine Script files directly from the strategy definition,
+then overwrite the adapter-generated files in `export_dir`.
+
+**Step A — Locate export directory:**
+
+```bash
+curl -s http://localhost:3001/strategies/<strategy_id> | jq -r '.export_dir'
+```
+
+If `export_dir` is null (Phase 5.5 Step D failed), trigger it now:
+```bash
+curl -s -X POST http://localhost:3001/strategies/<strategy_id>/export/generate \
+  -H "Content-Type: application/json"
+curl -s http://localhost:3001/strategies/<strategy_id> | jq -r '.export_dir'
+```
+
+Set `export_dir_abs = engine/strategies/validated/<name>_exports`.
+
+**Step B — Read strategy JSON:**
+
+Read `engine/strategies/validated/<name>.json` (the current, final strategy file).
+This is the single source of truth for all generated code.
+
+**Step C — Generate and write `<name>.cs` (cTrader C# cBot):**
+
+Using your full knowledge of the cTrader cAlgo API, generate a complete, compilable
+C# cBot that faithfully implements the strategy. Write it directly with the Write tool
+to `<export_dir_abs>/<name>.cs`.
+
+Requirements for the `.cs` file:
+- Open with a `/// <summary>` XML doc block listing indicators, entry/exit logic, and risk
+  management (mirrors the strategy JSON in human-readable form)
+- `using System;` + `using cAlgo.API;` + `using cAlgo.API.Indicators;`
+- `namespace cAlgo.Robots { ... }` wrapping the entire class
+- `[Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None, AddIndicators = true)]`
+- `[Parameter("Label", DefaultValue = "<strategy-name-slug>")]` as the FIRST parameter
+- All indicator parameters as `[Parameter]` attributes with `MinValue`/`MaxValue` where sensible,
+  grouped with `Group = "..."` for non-essential params
+- `[Parameter("Risk %", DefaultValue = X, MinValue = 0.1, MaxValue = 10.0)]`
+- For each indicator in `strategy.indicators`: declare a private field + initialize in `OnStart()`
+  using the correct cTrader `Indicators.XXX(...)` call
+- `OnStart()`: print a banner, register `Positions.Closed += OnPosClosed`
+- `OnBar()`: implement all `entry_rules` (long) and `entry_rules_short` (short if present),
+  all `exit_rules` and `exit_rules_short`; use `Label + "-long"` / `Label + "-short"` as
+  position labels for `Positions.Find()` and `ExecuteMarketOrder()`
+- SL/TP from `position_management`:
+  - `sl_pips` / `tp_pips` → use directly as pips params
+  - `sl_atr_mult` / `tp_atr_mult` → compute from ATR: `atr.Result.LastValue * mult / Symbol.PipSize`
+  - `trailing_sl: "atr"` → trail SL in `ManagePosition()` using ATR × `trailing_sl_atr_mult`
+  - `trailing_sl: "supertrend"` → trail SL to SuperTrend line
+  - `scale_out` → implement partial close at `trigger_r × initial_sl_distance`
+  - `time_exit_bars` → exit losing position after N bars
+- `CalculateVolume(double slPips)`: risk-based sizing using `Account.Balance * RiskPct / 100 /
+  (slPips * Symbol.PipValue)`, normalized with `NormalizeVolumeInUnits`
+- `OnPosClosed(PositionClosedEventArgs args)`: filter by Label, track `_totalTrades` / `_wins`
+- `UpdateInfo()`: HUD text via `Chart.DrawStaticText`
+- `OnStop()`: print win-rate stats
+- All `crosses_above` conditions: detect transition using a previous-value field `_prevXxx`
+  updated at the end of `OnBar()`
+
+**Step D — Generate and write `<name>.pine` (TradingView Pine Script):**
+
+Generate a complete, working Pine Script v5 strategy. Write it to `<export_dir_abs>/<name>.pine`.
+
+Requirements for the `.pine` file:
+- Open with a `// ====` comment block with the same strategy principles description
+- `//@version=5`
+- `strategy("...", overlay=true, default_qty_type=strategy.percent_of_equity, ...)`
+- `input.int()` / `input.float()` for all indicator parameters
+- Correct `ta.` function calls for all indicators in `strategy.indicators`
+- All `entry_rules` → `longCondition`, all `entry_rules_short` → `shortCondition`
+- All `exit_rules` → `longExit`, all `exit_rules_short` → `shortExit`
+- `crosses_above` → `ta.crossover(...)`, `crosses_below` → `ta.crossunder(...)`
+- Fixed SL/TP via `strategy.entry(...)` with `stop=` / `limit=` parameters if `sl_pips`/`tp_pips`
+  are set; otherwise use `strategy.exit(...)` with appropriate conditions
+- Strategy orders at the bottom
+
+Print after this phase:
+```
+─── PHASE 5.6: LLM EXPORT GENERATION ────────────────────────
+  Written: engine/strategies/validated/<name>_exports/<name>.cs
+  Written: engine/strategies/validated/<name>_exports/<name>.pine
+```
 
 ---
 
@@ -531,4 +635,5 @@ Track these internally across phases:
 - POST all results (kept AND reverted) to Lab for full traceability.
 - **Vault sync is mandatory** when promoting: always POST `split = "full"` results + research notes (PHASE 5.5). The Vault detail page only shows `full`-split results.
 - **Multiple strategy variants**: if the workflow produces separate strategy files (e.g. different TF pairs), register each variant as a separate strategy in the API with its own `strategy_id`, create separate Lab sessions linked to each, and POST `split = "full"` results to each. Otherwise the Vault shows empty pages for unlinked variants.
+- **LLM export is mandatory after promote**: Phase 5.6 must always run after Phase 5.5. It overwrites the adapter-generated `.cs` and `.pine` with LLM-generated code. The `.cbotset` files are NOT regenerated (adapter output is correct for those).
 - **`param_overrides` caveat**: the engine's `param_overrides` apply key-value pairs to ALL indicators (not just the intended one). The `WalkForwardAnalyzer` does NOT pass `instrument`/`timeframe` to the runner, so `param_overrides` are silently ignored during WF. To ensure consistent IS ↔ WF results, bake per-pair params directly into the strategy JSON indicators/rules rather than relying on `param_overrides`.

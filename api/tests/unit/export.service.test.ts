@@ -133,7 +133,7 @@ describe("CTraderAdapter", () => {
 
   it("generates short-side entry/exit when entry_rules_short is non-empty", () => {
     const code = adapter.generate(biDirStrategy);
-    expect(code).toContain(`"Short"`);
+    expect(code).toContain(`"-short"`);
     expect(code).toContain("TradeType.Sell");
   });
 

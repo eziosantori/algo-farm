@@ -6,6 +6,7 @@ import type {
   IndicatorType,
 } from "@algo-farm/shared/strategy";
 import { getCTraderSpec } from "./indicator-map.js";
+import { generateStrategyPrinciples } from "./strategy-comment.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,12 +70,19 @@ export class CTraderAdapter implements ExportAdapter {
 
     const pm = strategy.position_management;
     const className = toPascalCase(strategy.name);
+    const defaultLabel = strategy.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
     const paramLines: string[] = [];
     const fieldLines: string[] = [];
     const onStartLines: string[] = [];
     const prevFieldLines: string[] = [];
     const prevUpdateLines: string[] = [];
+
+    // Label parameter (always first)
+    paramLines.push(
+      `        [Parameter("Label", DefaultValue = "${defaultLabel}")]`,
+      `        public string Label { get; set; }`
+    );
 
     // Risk/sizing params
     paramLines.push(
@@ -166,7 +174,6 @@ export class CTraderAdapter implements ExportAdapter {
     }
 
     // Extract entry/exit rule thresholds as C# parameters (for opset per-pair tuning)
-    // Each unique (indicator, value) pair gets its own parameter property
     const thresholdProps = new Map<string, string>(); // "indicator|value" → C# property name
     const thresholdCounts = new Map<string, number>(); // indicator → count for disambiguation
     for (const rule of allRules) {
@@ -201,7 +208,6 @@ export class CTraderAdapter implements ExportAdapter {
 
     const buildCondition = (rule: RuleDef): string => {
       const lhs = getAccessor(rule.indicator);
-      // Use C# parameter property for threshold values (allows per-pair opset override)
       const ruleKey = `${rule.indicator}|${rule.value}`;
       const rhs =
         rule.compare_to != null
@@ -211,14 +217,10 @@ export class CTraderAdapter implements ExportAdapter {
             : String(rule.value ?? 0);
 
       switch (rule.condition) {
-        case ">":
-          return `${lhs} > ${rhs}`;
-        case "<":
-          return `${lhs} < ${rhs}`;
-        case ">=":
-          return `${lhs} >= ${rhs}`;
-        case "<=":
-          return `${lhs} <= ${rhs}`;
+        case ">":  return `${lhs} > ${rhs}`;
+        case "<":  return `${lhs} < ${rhs}`;
+        case ">=": return `${lhs} >= ${rhs}`;
+        case "<=": return `${lhs} <= ${rhs}`;
         case "crosses_above": {
           const prev = `_prev${toPascalCase(rule.indicator)}`;
           return `${prev} < ${rhs} && ${lhs} >= ${rhs}`;
@@ -239,62 +241,63 @@ export class CTraderAdapter implements ExportAdapter {
     };
 
     const longEntry = joinConditions(strategy.entry_rules);
-    const longExit = joinConditions(strategy.exit_rules);
+    const longExit  = joinConditions(strategy.exit_rules);
     const shortRules = strategy.entry_rules_short ?? [];
     const shortExitRules = strategy.exit_rules_short ?? [];
     const hasShort = shortRules.length > 0;
 
-    const slExpr =
+    // SL/TP pips expressions (precomputed before CalculateVolume call)
+    const slPipsDecl =
       pm.sl_pips != null
-        ? "SlPips"
+        ? `double slPips = SlPips;`
         : pm.sl_atr_mult != null
-          ? `(double?)(_atr?.Result.LastValue * SlAtrMult / Symbol.PipSize)`
-          : "null";
-    const tpExpr =
+          ? `double slPips = _atr != null ? _atr.Result.LastValue * SlAtrMult / Symbol.PipSize : 20.0;`
+          : `double slPips = 20.0;`;
+
+    const tpPipsDecl =
       pm.tp_pips != null
-        ? "TpPips"
+        ? `double? tpPips = TpPips;`
         : pm.tp_atr_mult != null
-          ? `(double?)(_atr?.Result.LastValue * TpAtrMult / Symbol.PipSize)`
-          : "null";
+          ? `double? tpPips = _atr != null ? (double?)(_atr.Result.LastValue * TpAtrMult / Symbol.PipSize) : null;`
+          : `double? tpPips = null;`;
 
     const onBarLines: string[] = [
+      `            ${slPipsDecl}`,
+      `            ${tpPipsDecl}`,
+      ``,
       `            // Long entry`,
-      `            if (Positions.Find("Long", SymbolName) == null)`,
+      `            if (Positions.Find(Label + "-long", SymbolName) == null)`,
       `            {`,
       `                if (${longEntry})`,
       `                {`,
-      `                    var volume = Symbol.NormalizeVolumeInUnits(`,
-      `                        Account.Balance * RiskPct / 100.0 / (${slExpr} ?? 20.0) / Symbol.PipValue);`,
-      `                    ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, "Long", ${slExpr}, ${tpExpr});`,
+      `                    ExecuteMarketOrder(TradeType.Buy, SymbolName, CalculateVolume(slPips), Label + "-long", slPips, tpPips);`,
       `                }`,
       `            }`,
       `            // Long exit`,
       `            else`,
       `            {`,
       `                if (${longExit})`,
-      `                    ClosePosition(Positions.Find("Long", SymbolName));`,
+      `                    ClosePosition(Positions.Find(Label + "-long", SymbolName));`,
       `            }`,
     ];
 
     if (hasShort) {
       const shortEntry = joinConditions(shortRules);
-      const shortExit = joinConditions(shortExitRules);
+      const shortExit  = joinConditions(shortExitRules);
       onBarLines.push(
         `            // Short entry`,
-        `            if (Positions.Find("Short", SymbolName) == null)`,
+        `            if (Positions.Find(Label + "-short", SymbolName) == null)`,
         `            {`,
         `                if (${shortEntry})`,
         `                {`,
-        `                    var volume = Symbol.NormalizeVolumeInUnits(`,
-        `                        Account.Balance * RiskPct / 100.0 / (${slExpr} ?? 20.0) / Symbol.PipValue);`,
-        `                    ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, "Short", ${slExpr}, ${tpExpr});`,
+        `                    ExecuteMarketOrder(TradeType.Sell, SymbolName, CalculateVolume(slPips), Label + "-short", slPips, tpPips);`,
         `                }`,
         `            }`,
         `            // Short exit`,
         `            else`,
         `            {`,
         `                if (${shortExit})`,
-        `                    ClosePosition(Positions.Find("Short", SymbolName));`,
+        `                    ClosePosition(Positions.Find(Label + "-short", SymbolName));`,
         `            }`
       );
     }
@@ -304,36 +307,77 @@ export class CTraderAdapter implements ExportAdapter {
       onBarLines.push(...prevUpdateLines);
     }
 
+    onBarLines.push(`            UpdateInfo();`);
+
+    // Header: XML summary with strategy principles
+    const xmlSummary = generateStrategyPrinciples(strategy, "cs");
+
     return [
       `using System;`,
       `using cAlgo.API;`,
       `using cAlgo.API.Indicators;`,
       ``,
-      `// Generated by AlgoFarm Export Engine`,
-      `// Strategy: ${strategy.name} (${strategy.variant})`,
-      `// WARNING: Review and test thoroughly before live trading`,
-      ``,
-      `namespace cAlgo.Robots`,
+      xmlSummary,
+      `[Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None, AddIndicators = true)]`,
+      `public class ${className} : Robot`,
       `{`,
-      `    [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]`,
-      `    public class ${className} : Robot`,
-      `    {`,
-      `        // Parameters`,
+      `    #region PARAMETRI`,
+      ``,
       ...paramLines,
       ``,
-      `        // Indicator fields`,
+      `    #endregion`,
+      ``,
+      `    // Indicator fields`,
       ...fieldLines,
       ...prevFieldLines,
       ``,
-      `        protected override void OnStart()`,
-      `        {`,
-      ...onStartLines,
-      `        }`,
+      `    // State`,
+      `    private int _totalTrades = 0;`,
+      `    private int _wins = 0;`,
       ``,
-      `        protected override void OnBar()`,
-      `        {`,
+      `    protected override void OnStart()`,
+      `    {`,
+      `        Print($"=== ${className} | {Label} ===");`,
+      `        Positions.Closed += OnPosClosed;`,
+      ...onStartLines,
+      `    }`,
+      ``,
+      `    protected override void OnBar()`,
+      `    {`,
       ...onBarLines,
-      `        }`,
+      `    }`,
+      ``,
+      `    private double CalculateVolume(double slPips)`,
+      `    {`,
+      `        double riskAmount = Account.Balance * (RiskPct / 100.0);`,
+      `        double volume = riskAmount / (slPips * Symbol.PipValue);`,
+      `        volume = Symbol.NormalizeVolumeInUnits(volume, RoundingMode.Down);`,
+      `        volume = Math.Max(volume, Symbol.VolumeInUnitsMin);`,
+      `        volume = Math.Min(volume, Symbol.VolumeInUnitsMax);`,
+      `        return volume;`,
+      `    }`,
+      ``,
+      `    private void OnPosClosed(PositionClosedEventArgs args)`,
+      `    {`,
+      `        if (!args.Position.Label.StartsWith(Label)) return;`,
+      `        _totalTrades++;`,
+      `        if (args.Position.NetProfit > 0) _wins++;`,
+      `        Print($"CLOSED | P/L: {args.Position.NetProfit:F2} | Reason: {args.Reason}");`,
+      `    }`,
+      ``,
+      `    private void UpdateInfo()`,
+      `    {`,
+      `        var pos = Positions.Find(Label + "-long", SymbolName)`,
+      `            ?? Positions.Find(Label + "-short", SymbolName);`,
+      `        if (pos == null) return;`,
+      `        string info = $"${className} | {pos.TradeType} | P/L: {pos.NetProfit:F2}";`,
+      `        Chart.DrawStaticText("hud", info, VerticalAlignment.Top, HorizontalAlignment.Right, Color.Yellow);`,
+      `    }`,
+      ``,
+      `    protected override void OnStop()`,
+      `    {`,
+      `        double winRate = _totalTrades > 0 ? (_wins * 100.0 / _totalTrades) : 0;`,
+      `        Print($"STOPPED | Trades: {_totalTrades} | Wins: {_wins} | WinRate: {winRate:F1}%");`,
       `    }`,
       `}`,
     ].join("\n");

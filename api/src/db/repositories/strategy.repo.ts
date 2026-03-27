@@ -12,6 +12,7 @@ export interface StrategyRow {
   created_at: string;
   updated_at: string;
   lifecycle_status: LifecycleStatus;
+  export_dir: string | null;
 }
 
 export interface StrategySummary {
@@ -27,6 +28,7 @@ export interface StrategyRecord {
   definition: StrategyDefinition;
   created_at: string;
   updated_at: string;
+  export_dir: string | null;
 }
 
 export class StrategyRepository {
@@ -68,6 +70,7 @@ export class StrategyRepository {
       definition: JSON.parse(row.definition_json) as StrategyDefinition,
       created_at: row.created_at,
       updated_at: row.updated_at,
+      export_dir: row.export_dir ?? null,
     };
   }
 
@@ -89,6 +92,14 @@ export class StrategyRepository {
     const result = this.db
       .prepare(`UPDATE strategies SET lifecycle_status = ?, updated_at = ? WHERE id = ?`)
       .run(status, now, id);
+    return result.changes > 0;
+  }
+
+  updateExportDir(id: string, dir: string): boolean {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(`UPDATE strategies SET export_dir = ?, updated_at = ? WHERE id = ?`)
+      .run(dir, now, id);
     return result.changes > 0;
   }
 

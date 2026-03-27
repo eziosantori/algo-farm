@@ -39,3 +39,4 @@ Thumbs.db
 engine/data/
 engine/strategies/**/*.json
 docs/ideas/
+engine/strategies/validated/

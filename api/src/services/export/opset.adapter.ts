@@ -16,30 +16,29 @@ function toPropName(indicatorName: string, paramKey: string): string {
   return toPascalCase(indicatorName) + toPascalCase(paramKey);
 }
 
-function xmlType(val: unknown): string {
-  if (typeof val === "number") return Number.isInteger(val) ? "Int32" : "Double";
-  if (typeof val === "boolean") return "Boolean";
-  return "String";
-}
+// ---------------------------------------------------------------------------
+// Timeframe mapping (AlgoFarm → cTrader Period format)
+// ---------------------------------------------------------------------------
 
-function xmlEscape(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+const TF_MAP: Record<string, string> = {
+  M1: "m1", M5: "m5", M10: "m10", M15: "m15", M30: "m30",
+  H1: "h1", H4: "h4", D1: "d1", W1: "w1",
+};
+
+function toCTraderPeriod(tf: string): string {
+  return TF_MAP[tf] ?? tf.toLowerCase();
 }
 
 // ---------------------------------------------------------------------------
-// Generate opset XML for a specific strategy (optionally with per-pair overrides)
+// Generate .cbotset JSON for a specific strategy (optionally per-pair)
 // ---------------------------------------------------------------------------
 
-export function generateOpsetXml(
+export function generateOpsetJson(
   strategy: StrategyDefinition,
   instrument?: string,
   timeframe?: string,
 ): string {
-  // Resolve per-pair overrides from strategy JSON (may exist even if not in Zod schema)
+  // Resolve per-pair overrides from strategy JSON
   const raw = strategy as Record<string, unknown>;
   const overridesAll = (raw["param_overrides"] ?? {}) as Record<
     string,
@@ -50,37 +49,29 @@ export function generateOpsetXml(
       ? (overridesAll[instrument]?.[timeframe] ?? {})
       : {};
 
-  const params: Array<{ name: string; type: string; value: string }> = [];
+  const params: Record<string, string> = {};
 
   // Position management params
   const pm = strategy.position_management;
-  params.push({ name: "RiskPct", type: "Double", value: String((pm.size ?? 0.02) * 100) });
-  if (pm.sl_pips != null) params.push({ name: "SlPips", type: "Double", value: String(pm.sl_pips) });
-  if (pm.tp_pips != null) params.push({ name: "TpPips", type: "Double", value: String(pm.tp_pips) });
-  if (pm.sl_atr_mult != null) params.push({ name: "SlAtrMult", type: "Double", value: String(pm.sl_atr_mult) });
-  if (pm.tp_atr_mult != null) params.push({ name: "TpAtrMult", type: "Double", value: String(pm.tp_atr_mult) });
+  params["RiskPct"] = String((pm.size ?? 0.02) * 100);
+  if (pm.sl_pips != null) params["SlPips"] = String(pm.sl_pips);
+  if (pm.tp_pips != null) params["TpPips"] = String(pm.tp_pips);
+  if (pm.sl_atr_mult != null) params["SlAtrMult"] = String(pm.sl_atr_mult);
+  if (pm.tp_atr_mult != null) params["TpAtrMult"] = String(pm.tp_atr_mult);
 
   // Per-indicator params — merge with pair overrides
   for (const ind of strategy.indicators) {
     const merged = { ...ind.params, ...pairOverrides };
     for (const [key, rawVal] of Object.entries(merged)) {
-      // Skip private override keys (start with _)
       if (key.startsWith("_")) continue;
-      // Only include params that exist in this indicator's original definition
       if (!(key in ind.params)) continue;
-      const val = rawVal;
-      if (typeof val === "number" || typeof val === "string" || typeof val === "boolean") {
-        params.push({
-          name: toPropName(ind.name, key),
-          type: xmlType(val),
-          value: String(val),
-        });
+      if (typeof rawVal === "number" || typeof rawVal === "string" || typeof rawVal === "boolean") {
+        params[toPropName(ind.name, key)] = String(rawVal);
       }
     }
   }
 
   // Entry/exit rule threshold values as parameters
-  // Matches the cTrader adapter naming: unique (indicator, value) → ThresholdN
   const allRules = [
     ...strategy.entry_rules,
     ...strategy.exit_rules,
@@ -102,38 +93,33 @@ export function generateOpsetXml(
       const propName = `${indName}Threshold${suffix}`;
 
       let effectiveValue: number = rule.value;
-      // Apply pair-specific threshold override (e.g. _adx_threshold → adx threshold)
       const overrideKey = `_${rule.indicator.replace(/\d+$/, "")}_threshold`;
       if (overrideKey in pairOverrides) {
         effectiveValue = pairOverrides[overrideKey] as number;
       }
 
-      params.push({
-        name: propName,
-        type: xmlType(effectiveValue),
-        value: String(effectiveValue),
-      });
+      params[propName] = String(effectiveValue);
     }
   }
 
-  const pairLabel =
-    instrument && timeframe ? ` (${instrument} ${timeframe})` : "";
+  // Build cTrader JSON .cbotset format
+  const cbotset: Record<string, unknown> = {
+    Parameters: params,
+  };
 
-  const lines = [
-    `<?xml version="1.0" encoding="utf-8"?>`,
-    `<!-- AlgoFarm Parameter Preset: ${xmlEscape(strategy.name)}${pairLabel} -->`,
-    `<ParameterSet>`,
-    `  <Parameters>`,
-    ...params.map(
-      (p) =>
-        `    <Parameter Name="${xmlEscape(p.name)}" Type="${p.type}">${xmlEscape(p.value)}</Parameter>`
-    ),
-    `  </Parameters>`,
-    `</ParameterSet>`,
-  ];
+  // Include Chart section when instrument/timeframe are specified
+  if (instrument && timeframe) {
+    cbotset["Chart"] = {
+      Symbol: instrument,
+      Period: toCTraderPeriod(timeframe),
+    };
+  }
 
-  return lines.join("\n");
+  return JSON.stringify(cbotset, null, 2);
 }
+
+// Keep the old name as alias for backward compat with routes
+export const generateOpsetXml = generateOpsetJson;
 
 // ---------------------------------------------------------------------------
 // ExportAdapter implementation (global params, no per-pair)
@@ -142,9 +128,9 @@ export function generateOpsetXml(
 export class OpsetAdapter implements ExportAdapter {
   readonly format = "opset" as const;
   readonly fileExtension = "cbotset";
-  readonly mimeType = "application/xml";
+  readonly mimeType = "application/json";
 
   generate(strategy: StrategyDefinition): string {
-    return generateOpsetXml(strategy);
+    return generateOpsetJson(strategy);
   }
 }

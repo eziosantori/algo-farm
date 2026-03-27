@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS strategies (
   definition_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  lifecycle_status TEXT NOT NULL DEFAULT 'draft'
+  lifecycle_status TEXT NOT NULL DEFAULT 'draft',
+  export_dir TEXT
 );
 
 CREATE TABLE IF NOT EXISTS error_log (

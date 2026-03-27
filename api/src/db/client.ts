@@ -30,6 +30,7 @@ export function initDb(dbPath: string): Database.Database {
     `ALTER TABLE lab_sessions ADD COLUMN is_end TEXT`,
     `ALTER TABLE backtest_results ADD COLUMN split TEXT NOT NULL DEFAULT 'full'`,
     `ALTER TABLE lab_sessions ADD COLUMN research_notes TEXT`,
+    `ALTER TABLE strategies ADD COLUMN export_dir TEXT`,
   ];
   for (const sql of migrations) {
     try { _db.exec(sql); } catch { /* column already exists */ }

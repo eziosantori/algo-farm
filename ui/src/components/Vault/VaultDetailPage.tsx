@@ -96,6 +96,40 @@ function TopPerformersTable({ rows }: { rows: TopPerformerRow[] }) {
   );
 }
 
+function CopyMarkdownButton({ markdown }: { markdown: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(markdown);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      title="Copy as Markdown"
+      className="flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
+    >
+      {copied ? (
+        <>
+          <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+          </svg>
+          <span className="text-emerald-600 dark:text-emerald-400">Copied!</span>
+        </>
+      ) : (
+        <>
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+          </svg>
+          Copy MD
+        </>
+      )}
+    </button>
+  );
+}
+
 function ResearchNotesPanel({
   notes,
 }: {
@@ -112,9 +146,12 @@ function ResearchNotesPanel({
     <div className="flex flex-col gap-6">
       {notes.map((n) => (
         <div key={n.id}>
-          <p className="text-xs text-gray-400 mb-3">
-            {new Date(n.created_at).toLocaleString()}
-          </p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-gray-400">
+              {new Date(n.created_at).toLocaleString()}
+            </p>
+            <CopyMarkdownButton markdown={n.research_notes} />
+          </div>
           <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:text-sm prose-headings:font-semibold prose-h2:text-base prose-h2:border-b prose-h2:border-gray-200 prose-h2:dark:border-gray-700 prose-h2:pb-1 prose-h2:mb-3 prose-h3:mt-4 prose-h3:mb-2 prose-table:text-xs prose-td:px-2 prose-td:py-1 prose-th:px-2 prose-th:py-1.5 prose-th:bg-gray-50 prose-th:dark:bg-gray-800 prose-table:border prose-table:border-gray-200 prose-table:dark:border-gray-700 prose-tr:border-b prose-tr:border-gray-100 prose-tr:dark:border-gray-800 prose-p:text-gray-700 prose-p:dark:text-gray-300 prose-li:text-gray-700 prose-li:dark:text-gray-300 prose-strong:text-gray-900 prose-strong:dark:text-white prose-code:text-xs prose-code:bg-gray-100 prose-code:dark:bg-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none">
             <Markdown remarkPlugins={[remarkGfm]}>{n.research_notes}</Markdown>
           </div>
