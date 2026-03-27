@@ -156,9 +156,40 @@ Trades          9         21        +12
 Target (sharpe > 1.5): NOT YET MET — run /iterate again or /optimize to fine-tune params
 ```
 
-### Step 7 — Save final version and mark Lab session completed
+### Step 7 — Save final version, archive prior variants, and mark Lab session completed
 
-Save: `engine/strategies/draft/<name>_v<N>.json`
+1. Save final improved version:
+  `engine/strategies/draft/<name>_v<N>.json`
+
+2. Auto-archive older variants for this strategy family so `draft/` stays clean.
+
+  ```bash
+  mkdir -p engine/strategies/archive/<name>/
+
+  # Keep only:
+  # - latest final file: <name>_v<N>.json
+  # - original working file used for this run
+  # Move older artifacts to archive:
+  # - <name>_iter*.json
+  # - <name>_v*.json (except latest)
+  # - <name>*_grid.json
+  # - <name>*_opt*.json
+
+  find engine/strategies/draft -maxdepth 1 -type f \
+    \( -name "<name>_iter*.json" -o -name "<name>_v*.json" -o -name "<name>*_grid.json" -o -name "<name>*_opt*.json" \) \
+    ! -name "<name>_v<N>.json" \
+    ! -name "<original_working_filename>.json" \
+    -exec mv {} engine/strategies/archive/<name>/ \;
+  ```
+
+3. Print archive summary:
+
+  ```
+  Archived prior variants to: engine/strategies/archive/<name>/
+  Kept in draft:
+    - <name>_v<N>.json
+    - <original_working_filename>.json
+  ```
 
 If API reachable:
 ```bash

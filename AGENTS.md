@@ -124,7 +124,7 @@ Runs 5 specialist subagents (technical analyst, market-structure analyst, risk a
 
 Saves:
 - Strategy: `engine/strategies/draft/<name>.json`
-- Design report: `docs/ideas/strategies/<name>_design.md` — full discussion + ready-to-run `@workflow-orchestrator` prompt
+- Design report: `engine/strategies/designs/<name>_design.md` — full discussion + ready-to-run `@workflow-orchestrator` prompt
 
 **Use this when:** the strategy is non-trivial, multi-instrument, or you want indicator/risk design reviewed before spending backtest time.
 

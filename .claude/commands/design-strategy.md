@@ -1,4 +1,4 @@
-Multi-agent strategy design board. Runs 5–7 specialist subagents to analyze, debate, and synthesize a strategy before producing the final StrategyDefinition JSON. Saves a design report to `docs/ideas/strategies/` with the full discussion and a ready-to-use workflow-orchestrator prompt.
+Multi-agent strategy design board. Runs 5–7 specialist subagents to analyze, debate, and synthesize a strategy before producing the final StrategyDefinition JSON. Saves a design report to `engine/strategies/designs/`.
 
 **Usage:** `/design-strategy "<description>" [--instruments X,Y] [--timeframes H1,H4] [--target "sharpe > 1.0"]`
 
@@ -40,6 +40,8 @@ Timeframes: <timeframes>
 Target: <target>
 
 Design the core indicator set and trading rules for this strategy.
+
+IMPORTANT: Return your analysis as markdown text in this response ONLY. Do NOT create, write, or save any files to disk.
 ```
 
 Save the full response as `TECHNICAL_REPORT`. Print: `✓ Technical analyst complete`
@@ -59,6 +61,8 @@ Technical Analyst Report:
 <TECHNICAL_REPORT>
 
 Evaluate the regime fit, timeframe suitability, and recommend any missing filters.
+
+IMPORTANT: Return your analysis as markdown text in this response ONLY. Do NOT create, write, or save any files to disk.
 ```
 
 Save the full response as `MARKET_REPORT`. Print: `✓ Market structure analyst complete`
@@ -79,6 +83,8 @@ Technical Analyst Report:
 <TECHNICAL_REPORT>
 
 Design the position_management block for this strategy.
+
+IMPORTANT: Return your analysis as markdown text in this response ONLY. Do NOT create, write, or save any files to disk.
 ```
 
 Save the full response as `RISK_REPORT`. Print: `✓ Risk analyst complete — Phase 2: Debate...`
@@ -100,6 +106,8 @@ Risk & Position Analyst Report:
 <RISK_REPORT>
 
 Argue for the strengths of this strategy design. Target: <target>
+
+IMPORTANT: Return your analysis as markdown text in this response ONLY. Do NOT create, write, or save any files to disk.
 ```
 
 Save the full response as `ADVOCATE_REPORT`. Print: `✓ Advocate complete`
@@ -127,6 +135,8 @@ Instruments: <instruments>
 Timeframes: <timeframes>
 
 Identify weaknesses and produce your blocking_concerns list.
+
+IMPORTANT: Return your analysis as markdown text in this response ONLY. Do NOT create, write, or save any files to disk.
 ```
 
 Save the full response as `CRITIC_REPORT`. Print: `✓ Critic complete`
@@ -159,6 +169,8 @@ Critic's Blocking Concerns:
 <extract blocking_concerns list from CRITIC_REPORT>
 
 Provide targeted rebuttals for each blocking concern. Include proposed JSON fixes where you accept a concern.
+
+IMPORTANT: Return your analysis as markdown text in this response ONLY. Do NOT create, write, or save any files to disk.
 ```
 
 Save as `ADVOCATE_REBUTTAL`. Append to `ADVOCATE_REPORT`.
@@ -179,6 +191,8 @@ Advocate's Rebuttals:
 <ADVOCATE_REBUTTAL>
 
 Review the rebuttals. Update your blocking_concerns list: remove concerns that were convincingly addressed, keep any that remain unresolved. Output final verdict.
+
+IMPORTANT: Return your analysis as markdown text in this response ONLY. Do NOT create, write, or save any files to disk.
 ```
 
 Save as `CRITIC_FINAL`. Set `DEBATE_ROUNDS = 2`.
@@ -218,6 +232,17 @@ Instruments: <instruments>
 Timeframes: <timeframes>
 
 Synthesize all reports into a final valid StrategyDefinition JSON. Address every blocking concern.
+
+After the JSON, produce an ENGINE_GAPS section listing every engine limitation or missing capability
+discovered during this design session. For each gap use this format:
+- **gap**: short description of what is missing or required a workaround
+- **workaround**: what was done instead (or "none — rule dropped")
+- **priority**: HIGH / MEDIUM / LOW
+- **suggested_fix**: one-line note on how it could be added to the engine
+
+If no gaps were found, write: ENGINE_GAPS: none
+
+IMPORTANT: Return your synthesis and the final JSON as text in this response ONLY. Do NOT create, write, or save any files to disk.
 ```
 
 Save the full response as `COMPOSER_REPORT`. Print: `✓ Composition complete — Phase 4: Output...`
@@ -264,7 +289,18 @@ Approve this strategy and save?
 
 2. Save strategy to `engine/strategies/draft/<filename>.json`.
 
-3. Register in API if reachable:
+3. **Conservative cleanup of obvious temp duplicates only**: do NOT delete by broad slug match
+   (it may remove legitimate historical variants). Move only explicit temp-style duplicates to archive:
+   ```bash
+   mkdir -p engine/strategies/archive/<snake_case_name>/
+   find engine/strategies/draft/ -maxdepth 1 -type f \
+     \( -name "<snake_case_name>__tmp*.json" -o -name "<snake_case_name>__draft*.json" \) \
+     -not -name "<filename>.json" \
+     -exec mv {} engine/strategies/archive/<snake_case_name>/ \; 2>/dev/null || true
+   ```
+   Keep all normal variants (`_iter*`, `_v*`, `_opt*`) untouched.
+
+4. Register in API if reachable:
    ```bash
    curl -s --max-time 3 http://localhost:3001/health
    ```
@@ -278,11 +314,17 @@ Approve this strategy and save?
 
 ---
 
-### Step 10 — Save design report
+### Step 10 — Save design report to strategy designs folder
 
-Build the report filename from the strategy name: `<snake_case_name>_design.md`
+Build the report filename: `<snake_case_name>_design.md`
+Build the folder path: `engine/strategies/designs/`
 
-Save to `docs/ideas/strategies/<snake_case_name>_design.md` with this content:
+Run:
+```bash
+mkdir -p engine/strategies/designs
+```
+
+Save to `engine/strategies/designs/<snake_case_name>_design.md` with this content:
 
 ```markdown
 # <Strategy Name> — Design Report
@@ -337,9 +379,15 @@ Save to `docs/ideas/strategies/<snake_case_name>_design.md` with this content:
 
 ---
 
-## Workflow Orchestrator — Ready-to-run prompt
+## Engine Gaps Found During Design
 
-Copy and paste this into Claude Code to start the full development lifecycle:
+> Limitations discovered during the multi-agent debate. Appended to `BACKLOG.md`.
+
+<ENGINE_GAPS block from COMPOSER_REPORT — omit if ENGINE_GAPS: none>
+
+---
+
+## Workflow Orchestrator — Ready-to-run prompt
 
 ```
 @workflow-orchestrator <filename>.json \
@@ -349,16 +397,36 @@ Copy and paste this into Claude Code to start the full development lifecycle:
   --iterations 3
 ```
 
-> The strategy has already been designed through multi-agent debate. Skip directly to backtesting and optimization — no `/new-strategy` or `/iterate` manual steps needed.
+> The strategy has already been designed through multi-agent debate. Skip directly to backtesting and optimization.
+
+---
+
+## Supporting Files
+
+None — agents returned analysis as text (no stray files).
+
+To discard this session entirely:
+```bash
+rm engine/strategies/designs/<snake_case_name>_design.md
+rm engine/strategies/draft/<filename>.json
+```
 ```
 
-Print:
+**Step 10B — Print final output**
+
 ```
-Report saved: docs/ideas/strategies/<snake_case_name>_design.md
+Session output saved to: engine/strategies/designs/
+  <snake_case_name>_design.md     ← consolidated report (all phases + JSON)
+
 Strategy saved: engine/strategies/draft/<filename>.json
 <if STRATEGY_ID non-empty>: API id: <STRATEGY_ID>
 
-To start the full development lifecycle, run:
+Next steps:
+  Backtest:  /backtest <filename>.json
+  Use report: engine/strategies/designs/<snake_case_name>_design.md
+  Discard:   rm engine/strategies/designs/<snake_case_name>_design.md
+
+To run the full optimization lifecycle:
 
 @workflow-orchestrator <filename>.json \
   --goal "<target>" \
@@ -385,5 +453,8 @@ Print: `Strategy discarded. Run /design-strategy again with a different idea.`
 
 - Total agent calls: 6 (no blocking concerns) or 8 (with Round 2 debate)
 - Models: Haiku for analysts + advocate + critic; Sonnet for composer
-- Output files: `engine/strategies/draft/<name>.json` + `docs/ideas/strategies/<name>_design.md`
+- All agents instructed not to write files to disk — analysis is returned as text only
+- Output files: `engine/strategies/draft/<name>.json` + `engine/strategies/designs/<name>_design.md`
+- Promote finalized reports with `/promote-design <strategy_name>` to move them into `docs/ideas/strategies/`
+- Legacy `docs/ideas/tmp/` folders are supported by `/promote-design` and compacted (not deleted) to preserve discussion context
 - Use `/new-strategy` for quick single-shot generation; use this command for thorough analysis

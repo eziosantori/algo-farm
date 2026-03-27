@@ -15,7 +15,8 @@ Generate a new trading strategy JSON file from the user's natural language descr
 3. Important constraints:
    - Every indicator referenced in rules MUST be declared in `indicators[]` with a unique `name`
    - `compare_to` references must match an existing indicator `name` — `"close"` is NOT valid
-   - Multiple entry/exit rules are evaluated with AND logic
+  - `entry_rules` use AND logic (all conditions must be true)
+  - `exit_rules` use OR logic (any condition can trigger exit)
    - `value` and `compare_to` are mutually exclusive per rule
 
 4. Derive a snake_case filename from the strategy name (e.g., `rsi_reversal_adx.json`).

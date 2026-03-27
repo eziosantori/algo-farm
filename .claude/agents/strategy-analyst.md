@@ -62,4 +62,9 @@ Valid `change_type` values: `add_entry_rule`, `remove_entry_rule`, `add_exit_rul
 
 ## Note on strategies from `/design-strategy`
 
-If the strategy was created by the Strategy Design Board (`/design-strategy`), a design report exists at `docs/ideas/strategies/<name>_design.md`. Read it before proposing changes — the rationale for each indicator and rule is documented there. Avoid re-introducing patterns or indicators that the critic explicitly rejected.
+If the strategy was created by the Strategy Design Board (`/design-strategy`), read the design report before proposing changes.
+
+Primary path: `engine/strategies/designs/<name>_design.md`
+Promoted path: `docs/ideas/strategies/<name>_design.md`
+
+The rationale for each indicator and rule is documented there. Avoid re-introducing patterns or indicators that the critic explicitly rejected.
