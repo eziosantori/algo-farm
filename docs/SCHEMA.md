@@ -161,6 +161,35 @@ ERROR [job=550e8400] DataMissingError: Parquet file not found for EURUSD/H1: /da
 | `--resume-job` | No | Resume an interrupted job by `job_id` |
 | `--log-level` | No | `DEBUG`, `INFO` (default), `WARNING` |
 
+### 1.4 Data download: timeout constraint and chunking pattern
+
+`DukascopyDownloader._fetch_via_node()` calls `dukascopy-node` via subprocess with a
+hard **300-second timeout**. This is sufficient for H1/H4/D1 over any multi-year range,
+but M5/M15 over 1+ years exceeds the limit:
+
+| Timeframe | Bars/year | Risk for 1-year call | Recommended chunk |
+|-----------|-----------|---------------------|-------------------|
+| M1 | ~78,000 | ❌ always times out | monthly |
+| M5 | ~19,700 | ⚠ borderline | **quarterly** |
+| M15 | ~6,500 | ⚠ borderline | **quarterly** |
+| H1 | ~1,640 | ✓ safe | annual |
+| H4/D1 | < 500 | ✓ safe | annual |
+
+**Use `engine/scripts/download_bulk.py`** for any bulk download involving M5 or M15.
+It splits the date range into quarterly windows (configurable via `--chunk-size`) and
+uses the downloader's incremental mode so no data is re-fetched if the Parquet already
+exists.
+
+```bash
+# Quarterly chunking for M5/M15 (default):
+python scripts/download_bulk.py --instruments MAG7 --timeframes M5,M15
+
+# Annual chunking safe for H1:
+python scripts/download_bulk.py --instruments FOREX_MAJORS --timeframes H1 --chunk-size year
+```
+
+See `AGENTS.md § Bulk download with timeout-safe chunking` for the full reference.
+
 ---
 
 ## 2. StrategyDefinition v1 — Core Strategy Contract

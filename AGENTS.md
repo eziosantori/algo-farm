@@ -356,6 +356,75 @@ python download.py --instruments EURUSD,XAUUSD,BTCUSD \
 **Supported instruments:** 34 total — forex majors/crosses, Gold, Silver, Brent, WTI, NatGas, Copper, US500, NAS100, GER40, UK100, JPN225, AUS200, 10 NASDAQ stocks, 33 crypto pairs (BTCUSD, ETHUSD …)
 **Supported timeframes:** M1, M5, M10, M15, M30, H1, H4, D1, W1
 
+### Bulk download with timeout-safe chunking
+
+`download.py` works for H1/H4/D1 over any date range. For **M5 or M15 over multi-year
+windows**, use `scripts/download_bulk.py` instead — it splits the range into quarterly
+chunks (≤ 3 monthly HTTP requests each) to stay well under the 300-second
+dukascopy-node subprocess timeout.
+
+```bash
+# M5 + M15 for all MAG7 stocks from 2022 to today (recommended for IS/OOS/WF)
+python scripts/download_bulk.py --instruments MAG7 --timeframes M5,M15
+
+# Preview without downloading
+python scripts/download_bulk.py --instruments MAG7 --timeframes M5,M15 --dry-run
+
+# Mix named groups with individual symbols
+python scripts/download_bulk.py \
+  --instruments MAG7,EURUSD,XAUUSD --timeframes M5,M15,H1 \
+  --from-year 2023
+
+# H1 for forex majors (annual chunks are fine for H1)
+python scripts/download_bulk.py \
+  --instruments FOREX_MAJORS --timeframes H1 --chunk-size year
+
+# Monthly chunks for M1 or unreliable networks
+python scripts/download_bulk.py \
+  --instruments AAPL,MSFT --timeframes M1 --chunk-size month
+
+# Run detached (takes ~2-3h for 7 symbols × 2 TF × 4yr quarterly)
+nohup python scripts/download_bulk.py --instruments MAG7 --timeframes M5,M15 \
+  > /tmp/download_bulk.log 2>&1 &
+tail -f /tmp/download_bulk.log
+```
+
+**Named instrument groups:**
+
+| Group | Symbols |
+|-------|---------|
+| `MAG7` | AAPL AMZN GOOGL META MSFT NVDA TSLA |
+| `FOREX_MAJORS` | EURUSD GBPUSD USDJPY USDCHF AUDUSD USDCAD NZDUSD |
+| `FOREX_CROSSES` | EURGBP EURJPY GBPJPY EURCHF AUDJPY |
+| `INDICES` | US500 NAS100 GER40 UK100 JPN225 AUS200 |
+| `METALS` | XAUUSD XAGUSD |
+| `CRYPTO_MAJOR` | BTCUSD ETHUSD LTCUSD |
+
+Groups can be combined: `--instruments MAG7,EURUSD,XAUUSD` (deduplication automatic).
+
+**Full option reference:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--instruments` | `MAG7` | Comma-separated symbols or group names |
+| `--timeframes` | `M5,M15` | Comma-separated timeframes |
+| `--from-year` | `2022` | First year to download |
+| `--to-year` | current year | Last year to download |
+| `--chunk-size` | `quarter` | `quarter` (M5/M15), `month` (M1), `year` (H1+) |
+| `--data-dir` | `engine/data` | Parquet cache root |
+| `--pause` | `3.0` | Seconds between subprocess calls |
+| `--dry-run` | false | Preview without downloading |
+
+**Timeout guidance by timeframe:**
+
+| Timeframe | Bars/quarter | Recommended chunk |
+|-----------|-------------|-------------------|
+| M1 | ~19,700 | `month` |
+| M5 | ~4,900 | `quarter` ✓ |
+| M15 | ~1,640 | `quarter` ✓ |
+| H1 | ~410 | `year` ✓ |
+| H4/D1 | <200 | `year` ✓ |
+
 ### JSONL stdout protocol
 
 ```jsonl
