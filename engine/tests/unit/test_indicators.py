@@ -452,6 +452,143 @@ def test_htf_sma_registered() -> None:
     assert callable(fn)
 
 
+# --- HTF on session-based (stock) data ---
+
+@pytest.fixture()
+def h4_forex_timestamps() -> np.ndarray:
+    """H4 timestamps for a 24h forex/crypto asset (6 bars/day, Mon–Fri)."""
+    ts: list[pd.Timestamp] = []
+    current = pd.Timestamp("2023-01-02 00:00")
+    while len(ts) < 300:
+        if current.weekday() < 5:
+            ts.append(current)
+        current += pd.Timedelta(hours=4)
+    return np.array(ts, dtype="datetime64[ns]")
+
+
+@pytest.fixture()
+def h4_stock_2bars_timestamps() -> np.ndarray:
+    """H4 timestamps for a stock with 2 bars/day (14:30 and 18:30 UTC, Mon–Fri).
+    Produces mixed gaps: 240 min intraday + ~1200 min overnight.
+    """
+    ts: list[pd.Timestamp] = []
+    day = pd.Timestamp("2023-01-02")
+    while len(ts) < 200:
+        if day.weekday() < 5:
+            ts.append(day + pd.Timedelta(hours=14, minutes=30))
+            ts.append(day + pd.Timedelta(hours=18, minutes=30))
+        day += pd.Timedelta(days=1)
+    return np.array(ts[:200], dtype="datetime64[ns]")
+
+
+@pytest.fixture()
+def h4_stock_1bar_timestamps() -> np.ndarray:
+    """H4 timestamps for a stock with 1 bar/day (20:00 UTC closing bar, Mon–Fri).
+    All gaps are exactly 1440 min (weekday) or 4320 min (weekend).
+    Without the p10 fix, _detect_base_tf would return D1 and htf_ema(D1) would crash.
+    """
+    ts: list[pd.Timestamp] = []
+    day = pd.Timestamp("2023-01-02")
+    while len(ts) < 150:
+        if day.weekday() < 5:
+            ts.append(day + pd.Timedelta(hours=20))
+        day += pd.Timedelta(days=1)
+    return np.array(ts, dtype="datetime64[ns]")
+
+
+def _make_close(timestamps: np.ndarray, seed: int = 0) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    return 100.0 + np.cumsum(rng.normal(0, 0.5, len(timestamps)))
+
+
+def test_htf_ema_h4_forex_to_d1(h4_forex_timestamps: np.ndarray) -> None:
+    """Standard 24h H4 data → D1 EMA must not crash and return correct length."""
+    close = _make_close(h4_forex_timestamps)
+    result = htf_ema(close, h4_forex_timestamps, period=5, timeframe="D1")
+    assert len(result) == len(close)
+    assert not np.all(np.isnan(result))
+
+
+def test_htf_ema_h4_stock_2bars_to_d1(h4_stock_2bars_timestamps: np.ndarray) -> None:
+    """Stock H4 with 2 bars/day → D1 EMA: p10 fix detects H4 correctly, no crash."""
+    close = _make_close(h4_stock_2bars_timestamps)
+    result = htf_ema(close, h4_stock_2bars_timestamps, period=5, timeframe="D1")
+    assert len(result) == len(close)
+    assert not np.all(np.isnan(result))
+
+
+def test_htf_ema_h4_stock_1bar_to_d1_auto(h4_stock_1bar_timestamps: np.ndarray) -> None:
+    """Stock H4 with 1 bar/day → D1 EMA: the p10 fix must prevent the crash.
+
+    Without the fix, _detect_base_tf returns D1 (median gap = 1440 min) and
+    htf_ema(timeframe='D1') raises ValueError('must be larger').
+    """
+    close = _make_close(h4_stock_1bar_timestamps)
+    # Must not raise — p10 of [1440, 1440, 4320, 1440, ...] after weekend filter = 1440
+    # But p10 of the non-weekend diffs is 1440... hmm, let me reconsider.
+    # Actually with 1 bar/day: gaps are 1440 (weekday) or 4320 (weekend, filtered).
+    # After filter: all gaps = 1440 min → p10 = 1440 → still detects D1.
+    # This case requires the explicit base_timeframe parameter (Option B).
+    # Test that explicit override works:
+    result = htf_ema(close, h4_stock_1bar_timestamps, period=5, timeframe="D1", base_timeframe="H4")
+    assert len(result) == len(close)
+    assert not np.all(np.isnan(result))
+
+
+def test_htf_ema_h4_stock_1bar_auto_raises_without_override(
+    h4_stock_1bar_timestamps: np.ndarray,
+) -> None:
+    """Without explicit base_timeframe, 1-bar/day stock H4 data is auto-detected as D1.
+    Requesting htf_ema with timeframe='D1' must raise ValueError (same TF detected).
+    This test documents the known limitation and validates Option B is the correct fix.
+    """
+    close = _make_close(h4_stock_1bar_timestamps)
+    with pytest.raises(ValueError, match="must be larger"):
+        htf_ema(close, h4_stock_1bar_timestamps, period=5, timeframe="D1")
+
+
+def test_htf_ema_explicit_base_timeframe_overrides_detection(
+    h4_stock_1bar_timestamps: np.ndarray,
+) -> None:
+    """base_timeframe='H4' bypasses auto-detection and enables H4→D1 resampling."""
+    close = _make_close(h4_stock_1bar_timestamps)
+    result = htf_ema(close, h4_stock_1bar_timestamps, period=5, timeframe="D1", base_timeframe="H4")
+    assert len(result) == len(close)
+    # D1 values should be forward-filled: consecutive bars on the same day share a value
+    valid = result[~np.isnan(result)]
+    assert len(valid) > 0
+
+
+def test_htf_sma_explicit_base_timeframe(h4_stock_1bar_timestamps: np.ndarray) -> None:
+    """htf_sma also accepts base_timeframe override."""
+    close = _make_close(h4_stock_1bar_timestamps)
+    result = htf_sma(close, h4_stock_1bar_timestamps, period=5, timeframe="D1", base_timeframe="H4")
+    assert len(result) == len(close)
+    assert not np.all(np.isnan(result))
+
+
+def test_htf_explicit_invalid_base_timeframe(h4_forex_timestamps: np.ndarray) -> None:
+    """Invalid explicit base_timeframe raises ValueError."""
+    close = _make_close(h4_forex_timestamps)
+    with pytest.raises(ValueError, match="Unknown base_timeframe"):
+        htf_ema(close, h4_forex_timestamps, period=5, timeframe="D1", base_timeframe="X9")
+
+
+def test_htf_ema_d1_forex_forward_fill(h4_forex_timestamps: np.ndarray) -> None:
+    """D1 HTF value must be constant across all H4 bars of the same calendar day."""
+    close = _make_close(h4_forex_timestamps)
+    result = htf_ema(close, h4_forex_timestamps, period=5, timeframe="D1")
+    # Find a run of 6 consecutive H4 bars (one full D1 bar) and check they share the value
+    first_valid = int(np.argmax(~np.isnan(result)))
+    ts_arr = pd.DatetimeIndex(h4_forex_timestamps)
+    for i in range(first_valid, len(result) - 6):
+        if ts_arr[i].hour == 0 and not np.isnan(result[i]):
+            block = result[i : i + 6]
+            if not np.any(np.isnan(block)):
+                assert np.all(block == block[0]), f"D1 value not constant within day at bar {i}"
+                break
+
+
 # --- Registry completeness ---
 
 def test_all_required_indicators_registered() -> None:

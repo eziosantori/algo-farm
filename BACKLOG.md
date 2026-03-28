@@ -650,3 +650,34 @@ concurrently, reducing the optimisation loop time.
   timestamp inside `next()`.
 - **Named param namespacing**: (already in Phase 1 Known Limitations) shared `"period"` key
   applies to all indicators in the param grid — causes collisions in multi-indicator optimisations.
+
+### Gaps from /design-strategy "Ichimoku H4 TK Cross — BTC Long Only" — 2026-03-27
+
+- **`htf_ichimoku_*` indicators missing** [MEDIUM]: `_resample_and_compute` in `trend.py` supports
+  only Close resampling (`last()`). Ichimoku Senkou B needs H/L resampling (`max()`/`min()`). No
+  `htf_ichimoku_tenkan/kijun/senkou_a/senkou_b` variants exist. Workaround: `htf_ema(50, D1)` used
+  as D1 trend proxy. Fix: extend `_resample_and_compute` to accept H/L series and add
+  `htf_ichimoku_*` indicator functions following the existing `htf_ema` pattern.
+
+- **`lagged_close` indicator missing** [MEDIUM]: no way to compare current bar value to a value
+  N bars ago (e.g. "Chikou > Close[30]"). Required for Ichimoku Chikou confirmation.
+  Workaround: rule dropped. Fix: add `lagged_close(period=N)` indicator returning `close[i-N]`,
+  enabling generic N-bar lookback comparisons in rule conditions.
+
+- **`sma` operates on Close only, not on indicator series** [LOW]: cannot express "SMA(30) of
+  ATR(14)" — the engine `sma` indicator always computes on the Close price series. Workaround:
+  `atr(period=30)` used as a background-volatility proxy. Fix: add a `rolling_mean(source, period)`
+  wrapper that accepts any named indicator output as input series.
+
+- **Realized volatility / regime filter missing** [HIGH]: no indicator computes rolling standard
+  deviation of log returns (realized vol). Critical for bear-market suppression on long-only
+  crypto strategies (without it, 2022 bear = −65% DD). Workaround: two-layer gate (ATR expansion
+  + Kumo-bullish entry rule). Fix: add `realized_vol(period=30)` indicator returning
+  `std(log(close/close.shift(1)), window=period) * sqrt(252)`.
+
+### Gaps from /design-strategy "Bollinger Breakout Volume Spike" — 2026-03-28
+
+- ~~**`htf_ema` with D1 on H4 backtest fails** [HIGH]~~ **FIXED 2026-03-28**: `_detect_base_tf`
+  now uses p10 percentile of non-weekend gaps (handles session assets with ≥2 bars/day).
+  `_resample_and_compute` / `htf_ema` / `htf_sma` accept explicit `base_timeframe` param for
+  1-bar/day assets where auto-detection is ambiguous. 9 regression tests added. 375/375 pass.

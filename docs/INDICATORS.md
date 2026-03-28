@@ -693,29 +693,45 @@ Ichimoku is a 5-line trend/momentum system. All 5 components must be registered 
 
 HTF (Higher TimeFrame) indicators compute a slower-timeframe MA and forward-fill it onto the current chart. Useful for multi-timeframe confirmation.
 
+The base timeframe is **auto-detected** from bar spacing using the 10th-percentile of non-weekend gaps. This correctly handles 24/7 assets (crypto) and most session-based assets (stocks with ≥2 bars/day). For assets with only 1 bar per day (e.g. daily OHLC bars treated as H4), use the explicit `base_timeframe` override.
+
 ### HTF EMA
 
 **Type:** `htf_ema`
 
-**Description:** EMA computed on a higher timeframe (e.g., D1) and forward-filled on H1 chart.
+**Description:** EMA computed on a higher timeframe (e.g., D1) and forward-filled on each base-timeframe bar.
 
 **Parameters:**
-- `htf` (str): Target timeframe (e.g., "D1", "H4")
-- `period` (int, default=20): EMA period on target timeframe
-- `source_tf` (str, default="H1"): Current chart timeframe (inferred; optional)
+- `timeframe` (str): Target higher timeframe — must be strictly larger than the base TF (e.g., `"D1"`, `"H4"`)
+- `period` (int, default=50): EMA period applied on the resampled HTF bars
+- `base_timeframe` (str, optional): Explicit base timeframe override (e.g., `"H4"`). Use this for session-based assets (stocks) when auto-detection might misclassify sparse bars as a higher TF.
 
-**Example JSON:**
+**Auto-detection notes:**
+- 24/7 crypto (e.g., H4 base → 6 bars/day): auto-detection works correctly.
+- Session stocks with ≥2 bars/day: auto-detection works (p10 captures the typical intrabar gap).
+- Session stocks with 1 bar/day: auto-detection returns D1 → requesting `timeframe="D1"` raises `ValueError`. **Use `base_timeframe="H4"` (or the actual base TF) to override.**
+
+**Example JSON (standard):**
 ```json
 {
   "name": "ema_d1",
   "type": "htf_ema",
-  "params": { "htf": "D1", "period": 20 }
+  "params": { "timeframe": "D1", "period": 50 }
+}
+```
+
+**Example JSON (explicit base for stock data):**
+```json
+{
+  "name": "ema_d1",
+  "type": "htf_ema",
+  "params": { "timeframe": "D1", "period": 50, "base_timeframe": "H4" }
 }
 ```
 
 **Rule example (filter to trend):**
 ```json
-{ "indicator": "close", "condition": ">", "compare_to": "ema_d1" }  // Only buy above daily EMA
+{ "indicator": "close", "condition": ">", "compare_to": "ema_d1" }
 ```
 
 ---
@@ -724,18 +740,19 @@ HTF (Higher TimeFrame) indicators compute a slower-timeframe MA and forward-fill
 
 **Type:** `htf_sma`
 
-**Description:** SMA computed on a higher timeframe and forward-filled on current chart.
+**Description:** SMA computed on a higher timeframe and forward-filled on each base-timeframe bar.
 
 **Parameters:**
-- `htf` (str): Target timeframe
-- `period` (int, default=20): SMA period on target timeframe
+- `timeframe` (str): Target higher timeframe (e.g., `"H4"`, `"D1"`)
+- `period` (int, default=50): SMA period on target timeframe
+- `base_timeframe` (str, optional): Explicit base timeframe override. Same rules as `htf_ema`.
 
 **Example JSON:**
 ```json
 {
   "name": "sma_h4",
   "type": "htf_sma",
-  "params": { "htf": "H4", "period": 20 }
+  "params": { "timeframe": "H4", "period": 20 }
 }
 ```
 

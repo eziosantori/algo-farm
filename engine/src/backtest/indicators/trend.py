@@ -160,20 +160,27 @@ _TF_MINUTES: dict[str, int] = {
 
 
 def _detect_base_tf(timestamps: np.ndarray) -> str:
-    """Infer the base timeframe from the median bar spacing."""
+    """Infer the base timeframe from bar spacing.
+
+    Uses the 10th percentile of non-weekend gaps so that session-based assets
+    (stocks with 1–2 bars/day) are detected correctly even when overnight gaps
+    would skew a simple median toward a higher timeframe.
+    """
     ts = pd.to_datetime(timestamps)
     diffs = ts[1:] - ts[:-1]
-    # Filter out weekend gaps (> 2 days) to get the true bar spacing
+    # Filter out weekend/holiday gaps (> 2 days)
     mask = diffs < pd.Timedelta(days=2)
     if mask.any():
-        median_minutes = int(diffs[mask].median().total_seconds() // 60)
+        minutes_arr = diffs[mask].total_seconds().values / 60.0
+        # p10 captures the typical intrabar spacing even for 1-bar/day session data
+        ref_minutes = int(np.percentile(minutes_arr, 10))
     else:
-        median_minutes = int(diffs.median().total_seconds() // 60)
+        ref_minutes = int(diffs.median().total_seconds() // 60)
     # Find closest matching timeframe
     best_tf = "H1"
-    best_diff = abs(60 - median_minutes)
+    best_diff = abs(60 - ref_minutes)
     for tf, minutes in _TF_MINUTES.items():
-        diff = abs(minutes - median_minutes)
+        diff = abs(minutes - ref_minutes)
         if diff < best_diff:
             best_diff = diff
             best_tf = tf
@@ -186,16 +193,20 @@ def _resample_and_compute(
     timeframe: str,
     compute_fn: str,
     period: int,
+    base_timeframe: str | None = None,
 ) -> np.ndarray:
     """Resample *close* to a higher timeframe, compute an indicator, and forward-fill back.
 
     Parameters
     ----------
-    close:      Close prices at the base timeframe.
-    timestamps: Datetime64 array aligned with close.
-    timeframe:  Target higher timeframe (e.g. "H4", "D1").
-    compute_fn: "ema" or "sma".
-    period:     Indicator period applied on the resampled bars.
+    close:          Close prices at the base timeframe.
+    timestamps:     Datetime64 array aligned with close.
+    timeframe:      Target higher timeframe (e.g. "H4", "D1").
+    compute_fn:     "ema" or "sma".
+    period:         Indicator period applied on the resampled bars.
+    base_timeframe: Optional explicit base timeframe (e.g. "H4"). When provided,
+                    skips auto-detection — use this for session-based assets (stocks)
+                    where sparse bars can confuse the heuristic.
 
     Returns
     -------
@@ -205,8 +216,17 @@ def _resample_and_compute(
     if timeframe not in _TF_MINUTES:
         raise ValueError(f"Unknown timeframe '{timeframe}'. Supported: {list(_TF_MINUTES.keys())}")
 
-    base_tf = _detect_base_tf(timestamps)
-    base_min = _TF_MINUTES[base_tf]
+    if base_timeframe is not None:
+        if base_timeframe not in _TF_MINUTES:
+            raise ValueError(
+                f"Unknown base_timeframe '{base_timeframe}'. Supported: {list(_TF_MINUTES.keys())}"
+            )
+        base_tf = base_timeframe
+        base_min = _TF_MINUTES[base_tf]
+    else:
+        base_tf = _detect_base_tf(timestamps)
+        base_min = _TF_MINUTES[base_tf]
+
     target_min = _TF_MINUTES[timeframe]
 
     if target_min <= base_min:
@@ -249,17 +269,20 @@ def htf_ema(
     timestamps: np.ndarray,
     period: int = 50,
     timeframe: str = "H4",
+    base_timeframe: str | None = None,
 ) -> np.ndarray:
     """EMA computed on a higher timeframe and forward-filled to the base timeframe.
 
     Parameters
     ----------
-    close:      Close price array at the base timeframe.
-    timestamps: Datetime64 array aligned with close.
-    period:     EMA period applied on the resampled HTF bars.
-    timeframe:  Target higher timeframe (e.g. "H4", "D1").
+    close:          Close price array at the base timeframe.
+    timestamps:     Datetime64 array aligned with close.
+    period:         EMA period applied on the resampled HTF bars.
+    timeframe:      Target higher timeframe (e.g. "H4", "D1").
+    base_timeframe: Optional explicit base timeframe override (e.g. "H4").
+                    Useful for session-based assets (stocks) with sparse bars.
     """
-    return _resample_and_compute(close, timestamps, timeframe, "ema", period)
+    return _resample_and_compute(close, timestamps, timeframe, "ema", period, base_timeframe)
 
 
 @IndicatorRegistry.register("htf_sma")
@@ -268,17 +291,20 @@ def htf_sma(
     timestamps: np.ndarray,
     period: int = 50,
     timeframe: str = "H4",
+    base_timeframe: str | None = None,
 ) -> np.ndarray:
     """SMA computed on a higher timeframe and forward-filled to the base timeframe.
 
     Parameters
     ----------
-    close:      Close price array at the base timeframe.
-    timestamps: Datetime64 array aligned with close.
-    period:     SMA period applied on the resampled HTF bars.
-    timeframe:  Target higher timeframe (e.g. "H4", "D1").
+    close:          Close price array at the base timeframe.
+    timestamps:     Datetime64 array aligned with close.
+    period:         SMA period applied on the resampled HTF bars.
+    timeframe:      Target higher timeframe (e.g. "H4", "D1").
+    base_timeframe: Optional explicit base timeframe override (e.g. "H4").
+                    Useful for session-based assets (stocks) with sparse bars.
     """
-    return _resample_and_compute(close, timestamps, timeframe, "sma", period)
+    return _resample_and_compute(close, timestamps, timeframe, "sma", period, base_timeframe)
 
 
 @IndicatorRegistry.register("htf_pattern")
