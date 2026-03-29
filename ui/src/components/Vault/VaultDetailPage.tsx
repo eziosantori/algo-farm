@@ -16,7 +16,8 @@ function sharpeBadge(v: number): string {
   return "text-red-500 dark:text-red-400 font-semibold";
 }
 
-function fmt(v: number, decimals = 2): string {
+function fmt(v: number | null | undefined, decimals = 2): string {
+  if (v == null || isNaN(v)) return "—";
   return v.toFixed(decimals);
 }
 
@@ -391,6 +392,14 @@ export function VaultDetailPage() {
               /workflow-orchestrator
             </code>{" "}
             to generate results.
+          </p>
+        </div>
+      )}
+
+      {summary === null && (
+        <div className="rounded-xl border border-dashed border-red-300 dark:border-red-800 p-10 text-center">
+          <p className="text-red-500 dark:text-red-400 text-sm">
+            Failed to load lab data. Check the browser console for details.
           </p>
         </div>
       )}
