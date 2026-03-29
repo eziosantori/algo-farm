@@ -555,6 +555,54 @@ concurrently, reducing the optimisation loop time.
 
 ## Phase 5 — Strategy Vault ⬜ TODO
 
+**Before implementation:** Plan hybrid architecture — split local SQLite vs cloud persistence.
+
+### Cloud Architecture — Planning Required
+
+> **NOTE:** Before implementing Phase 5, design and validate the hybrid persistence architecture.
+> Current SQLite is local-only; Vault needs cloud storage for remote access and production deployment.
+
+**Proposed approach:**
+- **Local SQLite (hot layer):**
+  - OHLCV Parquet cache (`data/`)
+  - Draft strategies (ephemeral, not synced)
+  - Test runs (non-archived results)
+  
+- **Cloud persistence (Supabase recommended):**
+  - `strategies` table (validated + production only)
+  - `parameter_sets` (regime-based)
+  - `runs` (archived backtest results)
+  - `robustness_reports`
+  - `journal_entries`
+  - `audit_log`
+
+**Why Supabase:**
+- PostgreSQL native (clean SQLite → Postgres migration)
+- REST API auto-generated (access data without UI via HTTP)
+- Row Level Security (granular auth)
+- Real-time subscriptions (vault update notifications)
+- Python + JS SDK (integrates directly into engine + API)
+
+**Alternative options to evaluate:**
+- **Airtable:** Good no-code UI, but strict API rate limits
+- **Notion:** Weak relational DB support, better for docs
+- **Neon / PlanetScale:** Pure serverless Postgres, fewer integrated features
+
+**Vault UI deployment:**
+- Option A: Single React app with Supabase direct client (faster iteration)
+- Option B: Two apps sharing `@algo-farm/shared` UI components (API + standalone vault)
+- **Decision required:** Architecture choice impacts auth, routing, deploy pipeline
+
+**Action items before M1:**
+1. Validate Supabase schema design (map SQLite DDL → Postgres)
+2. Prototype Python sync layer (SQLite ↔ Supabase)
+3. Decide single-app vs dual-app UI architecture
+4. Document deployment plan (Vercel/Netlify for UI, Fly.io for API if needed)
+
+---
+
+### Milestones (post-planning)
+
 - [ ] M1 — SQLite schema: strategies, parameter_sets, tags, journal_entries, audit_log
 - [ ] M2 — Strategy CRUD endpoints
 - [ ] M3 — Parameter sets per regime (bull / bear / sideways / default)
