@@ -222,6 +222,68 @@ def session_active(
     return result
 
 
+@IndicatorRegistry.register("session_return")
+def session_return(
+    open_: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    close: np.ndarray,
+    timestamps: np.ndarray,
+    from_time: str = "14:30",
+    to_time: str = "21:00",
+) -> np.ndarray:
+    """Prior-session return: (session_close - session_open) / session_open.
+
+    - During the session: running return from the session's first-bar open price.
+    - After the session ends: carry-forward of the completed session return until
+      the next session starts.
+    - Before the first session has been seen: NaN.
+
+    The value is a decimal fraction (e.g. 0.008 = +0.8%, -0.005 = -0.5%).
+    Use it in entry rules to gate on prior-session direction and magnitude.
+
+    Parameters
+    ----------
+    open_:      Bar open price array (first positional arg — matched by OHLC dispatch).
+    high:       Bar high price array (not used; required by OHLC dispatch).
+    low:        Bar low price array (not used; required by OHLC dispatch).
+    close:      Bar close price array.
+    timestamps: numpy datetime64[ns] array aligned with the price arrays.
+    from_time:  Session start in 'HH:MM' UTC (inclusive). Default: '14:30' (US RTH open).
+    to_time:    Session end   in 'HH:MM' UTC (exclusive). Default: '21:00' (US RTH close).
+    """
+    result = np.full(len(close), np.nan, dtype=float)
+    from_min = _parse_time(from_time)
+    to_min = _parse_time(to_time)
+
+    session_open_price: float = np.nan
+    last_carry: float = np.nan
+    last_session_key: tuple[int, int] | None = None
+
+    for i, raw_ts in enumerate(timestamps):
+        ts = pd.Timestamp(raw_ts)
+        bm = _bar_minutes(ts)
+        date_key = ts.date().toordinal()
+
+        if _within_window(bm, from_min, to_min):
+            session_key = (date_key, from_min)
+            if session_key != last_session_key:
+                # New session — anchor return to the first bar's open price
+                session_open_price = float(open_[i])
+                last_session_key = session_key
+
+            if not np.isnan(session_open_price) and session_open_price != 0.0:
+                running_return = (float(close[i]) - session_open_price) / session_open_price
+                last_carry = running_return
+                result[i] = running_return
+        else:
+            # Outside session — carry forward the completed session return
+            if not np.isnan(last_carry):
+                result[i] = last_carry
+
+    return result
+
+
 @IndicatorRegistry.register("session_high")
 def session_high(
     close: np.ndarray,

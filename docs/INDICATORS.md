@@ -1,6 +1,6 @@
 # Indicators Reference Guide
 
-> Complete documentation of all 59+ supported technical indicators. Last updated: March 2026. Ichimoku Cloud added Phase 5.
+> Complete documentation of all 60+ supported technical indicators. Last updated: March 2026. `session_return` added (overnight mean-reversion support).
 
 ---
 
@@ -10,7 +10,7 @@
 - [**Momentum Indicators**](#momentum-indicators) — RSI, Stochastic, CCI, Williams %R, ROC, OBV
 - [**Volatility Indicators**](#volatility-indicators) — ATR, Bollinger Bands, ADX
 - [**Volume Indicators**](#volume-indicators) — OBV, Volume SMA
-- [**Session & Intraday**](#session--intraday-indicators) — Session High/Low, VWAP, Anchored VWAP
+- [**Session & Intraday**](#session--intraday-indicators) — Session Return, Session High/Low, VWAP, Anchored VWAP
 - [**Candlestick Patterns**](#candlestick-patterns) — 17 pattern detection indicators
 - [**Ichimoku Cloud**](#ichimoku-cloud) — 5-line trend/momentum system
 - [**Higher Timeframe (HTF)**](#higher-timeframe-indicators) — EMA and SMA on alternative timeframes
@@ -500,6 +500,46 @@
 ```
 
 **Output range:** [0, 1]
+
+---
+
+### Session Return
+
+**Type:** `session_return`
+
+**Description:** Computes the return of a named session window as a decimal fraction: `(session_close - session_open) / session_open`. During the session, the running return from the first bar's open is tracked. After the session ends, the final completed return is carried forward until the next session starts. Returns NaN before the first session has been seen.
+
+Use this to gate entries on the prior session's direction and magnitude — for example, to enter SHORT only when the prior US RTH session rose more than 0.5%.
+
+**Parameters:**
+- `from_time` (str, default=`"14:30"`): Session start in 'HH:MM' UTC (inclusive). US RTH open = 14:30 UTC (09:30 EST).
+- `to_time` (str, default=`"21:00"`): Session end in 'HH:MM' UTC (exclusive). US RTH close = 21:00 UTC (16:00 EST).
+
+**Output:** Decimal fraction. Positive = session closed above open. Negative = session closed below open.
+
+**Warmup:** NaN until the first session bar is seen.
+
+**Example JSON:**
+```json
+{
+  "name": "rth_return",
+  "type": "session_return",
+  "params": { "from_time": "14:30", "to_time": "21:00" }
+}
+```
+
+**Rule examples:**
+```json
+{ "indicator": "rth_return", "condition": ">", "value":  0.005 }
+```
+→ Prior RTH was bullish by more than 0.5% (SHORT setup — fade the rally).
+
+```json
+{ "indicator": "rth_return", "condition": "<", "value": -0.005 }
+```
+→ Prior RTH was bearish by more than 0.5% (LONG setup — fade the drop).
+
+**Dispatch note:** Uses the OHLC dispatch branch (`open_`, `high`, `low`, `close`, `timestamps`). The session open anchors to the first bar's **open price**; `high` and `low` are received but not used.
 
 ---
 

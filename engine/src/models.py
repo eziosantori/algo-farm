@@ -42,6 +42,7 @@ class IndicatorDef(BaseModel):
         "supertrend_direction",
         # Phase B — session indicators
         "session_active",
+        "session_return",
         "session_high",
         "session_low",
         "vwap",

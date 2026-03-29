@@ -15,6 +15,7 @@ from src.backtest.indicators.session import (
     session_active,
     session_high,
     session_low,
+    session_return,
     vwap,
     vwap_lower,
     vwap_upper,
@@ -89,6 +90,153 @@ class TestSessionActive:
 
     def test_registered(self) -> None:
         fn = IndicatorRegistry.get("session_active")
+        assert callable(fn)
+
+
+# ---------------------------------------------------------------------------
+# session_return
+# ---------------------------------------------------------------------------
+
+class TestSessionReturn:
+    """Tests for session_return indicator (prior-session return carry-forward)."""
+
+    def _make_data(
+        self,
+        session_opens: list[float],
+        session_closes: list[float],
+        post_closes: list[float],
+        session_start: str = "14:00",
+        session_end: str = "20:00",
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Build OHLC + timestamps for a session followed by post-session bars.
+
+        Session bars run from session_start for len(session_opens) hours.
+        Post-session bars run immediately after for len(post_closes) hours.
+        """
+        session_ts = list(
+            pd.date_range("2024-01-03 " + session_start, periods=len(session_opens), freq="1h")
+        )
+        post_ts = list(
+            pd.date_range(
+                pd.Timestamp("2024-01-03 " + session_start)
+                + pd.Timedelta(hours=len(session_opens)),
+                periods=len(post_closes),
+                freq="1h",
+            )
+        )
+        ts = np.array(session_ts + post_ts, dtype="datetime64[ns]")
+        open_ = np.array(session_opens + [post_closes[0]] * len(post_closes), dtype=float)
+        close = np.array(session_closes + post_closes, dtype=float)
+        high = close + 0.5
+        low = close - 0.5
+        return open_, high, low, close, ts
+
+    def test_running_return_within_session(self) -> None:
+        # Session open = 100.0, closes = 101.0, 102.0, 103.0
+        # Expected returns: +1%, +2%, +3%
+        open_, high, low, close, ts = self._make_data(
+            session_opens=[100.0, 101.0, 102.0],
+            session_closes=[101.0, 102.0, 103.0],
+            post_closes=[99.0],
+        )
+        result = session_return(open_, high, low, close, ts, from_time="14:00", to_time="17:00")
+        assert result[0] == pytest.approx(0.01)   # (101-100)/100
+        assert result[1] == pytest.approx(0.02)   # (102-100)/100
+        assert result[2] == pytest.approx(0.03)   # (103-100)/100
+
+    def test_carry_forward_completed_return(self) -> None:
+        # Session closes at +2% → all post-session bars carry +2%
+        open_, high, low, close, ts = self._make_data(
+            session_opens=[100.0, 101.0],
+            session_closes=[101.0, 102.0],
+            post_closes=[99.0, 98.0, 97.0],
+        )
+        result = session_return(open_, high, low, close, ts, from_time="14:00", to_time="16:00")
+        # Post-session bars (indices 2, 3, 4) carry the final session return (+2%)
+        assert result[2] == pytest.approx(0.02)
+        assert result[3] == pytest.approx(0.02)
+        assert result[4] == pytest.approx(0.02)
+
+    def test_nan_before_first_session(self) -> None:
+        # Bars that start outside the session before any session has fired → NaN
+        ts = np.array(
+            pd.DatetimeIndex([
+                "2024-01-03 08:00",
+                "2024-01-03 09:00",
+                "2024-01-03 10:00",
+            ]),
+            dtype="datetime64[ns]",
+        )
+        open_ = np.array([100.0, 100.0, 100.0])
+        close = np.array([101.0, 102.0, 103.0])
+        high = close + 0.5
+        low = close - 0.5
+        result = session_return(open_, high, low, close, ts, from_time="14:00", to_time="17:00")
+        assert np.all(np.isnan(result))
+
+    def test_negative_return(self) -> None:
+        # Session open = 100, final close = 98 → -2%
+        open_, high, low, close, ts = self._make_data(
+            session_opens=[100.0, 99.0],
+            session_closes=[99.0, 98.0],
+            post_closes=[97.0, 96.0],
+        )
+        result = session_return(open_, high, low, close, ts, from_time="14:00", to_time="16:00")
+        assert result[1] == pytest.approx(-0.02)   # (98-100)/100 within session
+        assert result[2] == pytest.approx(-0.02)   # carry-forward post-session
+        assert result[3] == pytest.approx(-0.02)
+
+    def test_new_session_resets_anchor(self) -> None:
+        # Day 1: session open=100, close=105 → +5%
+        # Day 2: session open=200, close=202 → +1%
+        ts = np.array(
+            pd.DatetimeIndex([
+                "2024-01-03 14:00",   # day1 session bar 0
+                "2024-01-03 15:00",   # day1 session bar 1
+                "2024-01-03 22:00",   # day1 post-session
+                "2024-01-04 14:00",   # day2 session bar 0
+                "2024-01-04 15:00",   # day2 session bar 1
+                "2024-01-04 22:00",   # day2 post-session
+            ]),
+            dtype="datetime64[ns]",
+        )
+        open_ = np.array([100.0, 103.0, 105.0, 200.0, 201.0, 202.0])
+        close = np.array([103.0, 105.0, 105.0, 201.0, 202.0, 202.0])
+        high = close + 0.5
+        low = close - 0.5
+        result = session_return(open_, high, low, close, ts, from_time="14:00", to_time="16:00")
+        # Day1 session: open=100, close=105 → +5%
+        assert result[1] == pytest.approx(0.05)
+        # Day1 post-session: carry +5%
+        assert result[2] == pytest.approx(0.05)
+        # Day2 session: new anchor at open=200; bar1 close=202 → +1%
+        assert result[4] == pytest.approx(0.01)
+        # Day2 post-session: carry +1%
+        assert result[5] == pytest.approx(0.01)
+
+    def test_output_length_matches_input(self) -> None:
+        open_, high, low, close, ts = self._make_data(
+            session_opens=[100.0, 101.0],
+            session_closes=[101.0, 102.0],
+            post_closes=[99.0, 98.0],
+        )
+        result = session_return(open_, high, low, close, ts, from_time="14:00", to_time="16:00")
+        assert len(result) == len(close)
+
+    def test_minimum_move_filter_logic(self) -> None:
+        # Simulate how the indicator is used: compare against ±0.005 threshold
+        open_, high, low, close, ts = self._make_data(
+            session_opens=[100.0, 100.5],
+            session_closes=[100.3, 100.6],   # final: (100.6 - 100.0) / 100.0 = +0.6%
+            post_closes=[99.0, 98.5, 98.0],
+        )
+        result = session_return(open_, high, low, close, ts, from_time="14:00", to_time="16:00")
+        # Post-session: carry = +0.006. Rule: result > 0.005 → SHORT setup fires
+        for i in range(2, 5):
+            assert result[i] > 0.005
+
+    def test_registered(self) -> None:
+        fn = IndicatorRegistry.get("session_return")
         assert callable(fn)
 
 
