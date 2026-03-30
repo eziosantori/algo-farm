@@ -670,6 +670,27 @@ View results:
 Next step: Run /robustness again on more instruments, or prepare for cTrader export.
 ```
 
+### PHASE 6.1 — DOCS SYNC (mandatory after promote)
+
+**Only runs when Phase 5 outcome is `promote`** (skip for keep/reject).
+
+Sync updated design files and exports to the cBot documentation repository:
+
+```bash
+bash /Users/esantori/git/personal/algo-farm/scripts/sync-docs.sh
+```
+
+This propagates:
+- Updated design file with new Run Log entry → `cBot/docs/algo-farm/designs/` (transformed for MkDocs: status admonition, collapsible debate/run-notes, summary table)
+- Status badges in the designs index (`validated`, `draft`, `fail-robustness`)
+- Export files (`.cs`, `.cbotset`) → `cBot/02_Test_Optimization/AlgoFarm/<Type>/<Strategy>/`
+
+After sync, print:
+```
+  Docs sync:    cBot/docs/algo-farm/ updated
+  Exports:      cBot/02_Test_Optimization/AlgoFarm/<Type>/<folder>/ (.cs + .cbotset)
+```
+
 ---
 
 ## State tracking
