@@ -39,7 +39,9 @@
       "Bash(python -m pytest tests/unit/test_param_overrides.py -v)",
       "Bash(find /Users/esantori/git/personal/algo-farm/api -name *.test.ts)",
       "Bash(engine/.venv/bin/pytest engine/tests/unit/test_indicators.py -x -q)",
-      "Bash(engine/.venv/bin/pytest engine/tests/ -q)"
+      "Bash(engine/.venv/bin/pytest engine/tests/ -q)",
+      "Read(//Users/esantori/git/personal/cBot/**)",
+      "Bash(python -m mkdocs build)"
     ]
   }
 }

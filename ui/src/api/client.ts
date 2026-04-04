@@ -309,8 +309,9 @@ export const api = {
       engine_db_path?: string;
       param_grid?: Record<string, unknown>;
       optimize_metric?: string;
-      optimizer?: "grid" | "bayesian";
+      optimizer?: "grid" | "bayesian" | "genetic";
       n_trials?: number;
+      population_size?: number;
       from_date?: string;
       to_date?: string;
     }

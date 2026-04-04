@@ -553,6 +553,23 @@ concurrently, reducing the optimisation loop time.
 
 ---
 
+## Lab Optimizer Launcher ⬜ TODO
+
+> **Full plan:** [`docs/LAB_OPTIMIZER_MILESTONE.md`](docs/LAB_OPTIMIZER_MILESTONE.md)
+>
+> Repurpose the Lab page from a passive session viewer into a **UI-driven optimization launcher**.
+> Select a Vault strategy → pick instruments/timeframes (multiselect with autocomplete) → configure
+> parameter ranges (cTrader-style min/max/step) → choose optimizer (grid/bayesian/genetic) → launch
+> in background with real-time progress. **Zero LLM involvement** — pure engine execution.
+> Backend infrastructure already complete (BullMQ, WebSocket, all 3 optimizers). Work is ~95% frontend.
+
+- [ ] **Phase 1** — Core form + launch (strategy picker, InstrumentMultiSelect, TimeframeSelect, OptimizerConfig, tab layout)
+- [ ] **Phase 2** — ParamRangeBuilder (cTrader-style per-param min/max/step or list, combo counter)
+- [ ] **Phase 3** — Real-time progress (progress bar, live results table, elapsed time via WebSocket)
+- [ ] **Phase 4** — Vault integration + polish ("Optimize" button on VaultDetailPage, pre-fill form, edge cases)
+
+---
+
 ## Phase 5 — Strategy Vault ⬜ TODO
 
 **Before implementation:** Plan hybrid architecture — split local SQLite vs cloud persistence.
@@ -729,3 +746,27 @@ concurrently, reducing the optimisation loop time.
   now uses p10 percentile of non-weekend gaps (handles session assets with ≥2 bars/day).
   `_resample_and_compute` / `htf_ema` / `htf_sma` accept explicit `base_timeframe` param for
   1-bar/day assets where auto-detection is ambiguous. 9 regression tests added. 375/375 pass.
+
+### Gaps from /design-strategy "Ichimoku SuperTrend Precious Metals D1" — 2026-03-30
+
+- **Per-instrument `param_overrides` not supported in StrategyDefinition v1** [HIGH]: Silver
+  (XAGUSD) requires different SuperTrend multiplier (4.2 vs 3.5) and wider ATR stops (2.5 vs 2.0)
+  relative to Gold, due to ~2x volatility. The engine applies a single set of params to all
+  instruments in a strategy — no mechanism to condition overrides on instrument name.
+  Workaround: created separate `silver_ichi_supertrend_d1.json` with Silver-specific params.
+  Fix: add `param_overrides: { "INSTRUMENT": { "param": value } }` mapping to `StrategyDefinition`
+  schema (Pydantic + Zod) and resolve per-instrument overrides in `StrategyComposer.build_class()`.
+
+- **Cross-strategy portfolio correlation enforcement not available** [MEDIUM]: XAUUSD and XAGUSD
+  carry sustained correlation > 0.85. When both Gold and Silver strategies run as separate instances,
+  the engine has no cross-strategy position awareness to prevent simultaneous long Gold + long Silver
+  exposure (doubling precious metals risk on macro shocks). Workaround: operator discipline.
+  Fix: add portfolio-level instrument group limits (e.g. `instrument_groups: { precious_metals:
+  [XAUUSD, XAGUSD], max_open: 1 }`) evaluated across all running strategy instances.
+
+- **Ichimoku indicator API type name mismatch** [LOW]: `StrategyDefinition` schema (Zod/API) uses
+  `ichimoku_tenkan / ichimoku_kijun / ichimoku_senkou_a / ichimoku_senkou_b` but the strategy
+  composer and engine docs used `ichimoku_conversion / ichimoku_base / ichimoku_span_a /
+  ichimoku_span_b`. Caused schema validation error on `POST /strategies`. Workaround: corrected
+  type names before API registration. Fix: align API schema enum names with engine indicator names,
+  or add aliases in the Zod validator.
