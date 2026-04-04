@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { StrategyDefinition } from "@algo-farm/shared/strategy";
 import { api, type StrategySummary, type StrategyRecord } from "../../api/client.ts";
 import { InstrumentMultiSelect } from "./InstrumentMultiSelect.tsx";
 import { TimeframeSelect } from "./TimeframeSelect.tsx";
 import { OptimizerConfig, type OptimizerSettings } from "./OptimizerConfig.tsx";
+import { ParamRangeBuilder, extractTunableParams, buildParamGrid, type ParamRangeState } from "./ParamRangeBuilder.tsx";
 
 // ---------------------------------------------------------------------------
 // Vault status filter (same as VaultPage)
@@ -49,10 +50,16 @@ export function OptimizationLauncher({ initialStrategyId, onLaunched }: Props) {
     fromDate: "",
     toDate: "",
   });
+  const [paramRanges, setParamRanges] = useState<ParamRangeState>({});
 
   // Launch state
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Extract tunable params from strategy
+  const tunableParams = useMemo(() => {
+    return strategyDef ? extractTunableParams(strategyDef) : [];
+  }, [strategyDef]);
 
   // Load vault strategies
   useEffect(() => {
@@ -73,10 +80,20 @@ export function OptimizationLauncher({ initialStrategyId, onLaunched }: Props) {
   useEffect(() => {
     if (!strategyId) {
       setStrategyDef(null);
+      setParamRanges({});
       return;
     }
     api.getStrategy(strategyId)
-      .then((rec: StrategyRecord) => setStrategyDef(rec.definition))
+      .then((rec: StrategyRecord) => {
+        setStrategyDef(rec.definition);
+        // Initialize param ranges from extracted tunable params
+        const params = extractTunableParams(rec.definition);
+        const ranges: ParamRangeState = {};
+        for (const p of params) {
+          ranges[p.key] = p;
+        }
+        setParamRanges(ranges);
+      })
       .catch((e) => setError(String(e)));
   }, [strategyId]);
 
@@ -104,9 +121,11 @@ export function OptimizationLauncher({ initialStrategyId, onLaunched }: Props) {
       });
 
       // 2. Run (enqueue BullMQ job)
+      const paramGrid = buildParamGrid(paramRanges);
       await api.runLabSession(sessionId, {
         optimizer: optimizerSettings.optimizer,
         optimize_metric: optimizerSettings.metric,
+        param_grid: paramGrid,
         ...(optimizerSettings.optimizer !== "grid" && {
           n_trials: optimizerSettings.nTrials,
         }),
@@ -174,6 +193,17 @@ export function OptimizationLauncher({ initialStrategyId, onLaunched }: Props) {
 
       {/* Optimizer config */}
       <OptimizerConfig value={optimizerSettings} onChange={setOptimizerSettings} />
+
+      {/* Parameter ranges */}
+      {strategyDef && (
+        <ParamRangeBuilder
+          params={tunableParams}
+          ranges={paramRanges}
+          onChange={setParamRanges}
+          instrumentCount={instruments.length}
+          timeframeCount={timeframes.length}
+        />
+      )}
 
       {/* Error */}
       {error && (

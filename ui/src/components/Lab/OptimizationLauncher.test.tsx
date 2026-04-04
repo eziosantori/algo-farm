@@ -1,6 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import userEvent from "@testing-library/user-event";
 import { OptimizationLauncher } from "./OptimizationLauncher.tsx";
 import * as apiClient from "../../api/client.ts";
 
