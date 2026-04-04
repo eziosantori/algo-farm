@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, downloadExport, previewExport } from "../../api/client.ts";
@@ -356,6 +356,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 
 export function VaultDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [summary, setSummary] = useState<StrategyLabSummary | null | "loading" | "not_found">("loading");
 
   useEffect(() => {
@@ -369,15 +370,31 @@ export function VaultDetailPage() {
       });
   }, [id]);
 
+  function handleOptimize() {
+    if (id) {
+      navigate("/lab", { state: { strategyId: id } });
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-        <Link to="/vault" className="hover:text-gray-900 dark:hover:text-white transition-colors">
-          ← Vault
-        </Link>
-        <span>/</span>
-        <span className="text-gray-900 dark:text-white font-medium">Lab Summary</span>
+      {/* Breadcrumb + Actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <Link to="/vault" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+            ← Vault
+          </Link>
+          <span>/</span>
+          <span className="text-gray-900 dark:text-white font-medium">Lab Summary</span>
+        </div>
+        {summary && summary !== "loading" && summary !== "not_found" && summary !== null && (
+          <button
+            onClick={handleOptimize}
+            className="rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm font-medium text-white transition-colors"
+          >
+            Optimize
+          </button>
+        )}
       </div>
 
       {summary === "loading" && (
