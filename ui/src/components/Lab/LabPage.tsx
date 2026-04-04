@@ -2,12 +2,13 @@ import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import { OptimizationLauncher } from "./OptimizationLauncher.tsx";
 import { SessionHistory } from "./SessionHistory.tsx";
+import { OptimizationProgress } from "./OptimizationProgress.tsx";
 
 // ---------------------------------------------------------------------------
 // Tab types
 // ---------------------------------------------------------------------------
 
-type Tab = "launch" | "sessions";
+type Tab = "launch" | "progress" | "sessions";
 
 // ---------------------------------------------------------------------------
 // LabPage — tab container
@@ -17,12 +18,17 @@ export function LabPage() {
   const location = useLocation();
   const navState = location.state as { strategyId?: string } | null;
 
-  const [tab, setTab] = useState<Tab>(navState?.strategyId ? "launch" : "launch");
+  const [tab, setTab] = useState<Tab>("launch");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   function handleLaunched(sessionId: string) {
     setActiveSessionId(sessionId);
-    // Switch to sessions tab to see the running session
+    // Switch to progress view
+    setTab("progress");
+  }
+
+  function handleProgressCompleted() {
+    // Switch to sessions after completion
     setTab("sessions");
   }
 
@@ -48,6 +54,18 @@ export function LabPage() {
         >
           Launch
         </button>
+        {activeSessionId && (
+          <button
+            onClick={() => setTab("progress")}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              tab === "progress"
+                ? "bg-blue-500 text-white"
+                : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+            }`}
+          >
+            Progress
+          </button>
+        )}
         <button
           onClick={() => setTab("sessions")}
           className={`px-4 py-2 text-sm font-medium transition-colors ${
@@ -68,6 +86,13 @@ export function LabPage() {
             onLaunched={handleLaunched}
           />
         </div>
+      )}
+
+      {tab === "progress" && activeSessionId && (
+        <OptimizationProgress
+          sessionId={activeSessionId}
+          onCompleted={handleProgressCompleted}
+        />
       )}
 
       {tab === "sessions" && <SessionHistory />}

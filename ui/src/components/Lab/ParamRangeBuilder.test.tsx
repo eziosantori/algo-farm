@@ -25,13 +25,21 @@ const mockStrategy: StrategyDefinition = {
   ],
   entry_rules: [],
   exit_rules: [],
+  entry_rules_short: [],
+  exit_rules_short: [],
   position_management: {
     size: 0.02,
     sl_pips: 50,
     tp_pips: 100,
     sl_atr_mult: 2.0,
     max_open_trades: 1,
+    trailing_sl_atr_mult: 2.0,
   },
+  signal_gates: [],
+  pattern_groups: [],
+  suppression_gates: [],
+  trigger_holds: [],
+  param_overrides: {},
 };
 
 describe("ParamRangeBuilder", () => {
