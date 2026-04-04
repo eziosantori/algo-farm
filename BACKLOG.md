@@ -553,7 +553,7 @@ concurrently, reducing the optimisation loop time.
 
 ---
 
-## Lab Optimizer Launcher ⬜ TODO
+## Lab Optimizer Launcher ✅ DONE
 
 > **Full plan:** [`docs/LAB_OPTIMIZER_MILESTONE.md`](docs/LAB_OPTIMIZER_MILESTONE.md)
 >
@@ -561,12 +561,12 @@ concurrently, reducing the optimisation loop time.
 > Select a Vault strategy → pick instruments/timeframes (multiselect with autocomplete) → configure
 > parameter ranges (cTrader-style min/max/step) → choose optimizer (grid/bayesian/genetic) → launch
 > in background with real-time progress. **Zero LLM involvement** — pure engine execution.
-> Backend infrastructure already complete (BullMQ, WebSocket, all 3 optimizers). Work is ~95% frontend.
 
-- [ ] **Phase 1** — Core form + launch (strategy picker, InstrumentMultiSelect, TimeframeSelect, OptimizerConfig, tab layout)
-- [ ] **Phase 2** — ParamRangeBuilder (cTrader-style per-param min/max/step or list, combo counter)
-- [ ] **Phase 3** — Real-time progress (progress bar, live results table, elapsed time via WebSocket)
-- [ ] **Phase 4** — Vault integration + polish ("Optimize" button on VaultDetailPage, pre-fill form, edge cases)
+- [x] **Phase 1** — Core form + launch (strategy picker, InstrumentMultiSelect, TimeframeSelect, OptimizerConfig, tab layout) ✅
+- [x] **Phase 2** — ParamRangeBuilder (cTrader-style per-param min/max/step or list, combo counter) ✅
+- [x] **Phase 3** — Real-time progress (progress bar, live results table, elapsed time via WebSocket) ✅
+- [x] **Phase 4** — Vault integration ("Optimize" button on VaultDetailPage, pre-fill form) ✅
+- [x] **Test coverage** — 49 unit tests across 7 files (InstrumentMultiSelect, TimeframeSelect, OptimizerConfig, OptimizationLauncher, ParamRangeBuilder, OptimizationProgress) ✅
 
 ---
 
